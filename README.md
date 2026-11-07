@@ -174,19 +174,29 @@ vmctl deploy                 # after changing Dockerfile/scripts/skills/vm-tools
 The watcher stops the VM when all sessions have been idle for 15 min (or after
 12 h max uptime); reading results between prompts does not stop it.
 
-## Session flow (global session → repo-root sessions)
+## Session flow (global session → delegated worker sessions)
 
 1. You connect (TUI/web/API) and prompt the **global session** in `/root`.
-2. The agent loads the **start-repo-work** skill: `vm-tools start-work
-   owner/repo` clones into `/root/work/<repo>`, then the skill creates a new
-   session with `location.directory = /root/work/<repo>` and forwards the task
-   prompt to it (`POST /api/session/{id}/prompt` with `{"text": ...}`).
-3. The repo-root session does the work — the repo's own `AGENTS.md`,
-   `.opencode/skills`, etc. apply there. You can watch/steer it from your local
-   client (session list shows all locations).
+2. The global session loads the **start-repo-work** skill — this is a
+   **delegation** step, not where the work happens. It is the **only** session
+   allowed to use that skill: `vm-tools start-work owner/repo` clones into
+   `/root/work/<repo>`, then it creates a NEW **worker** session with
+   `location.directory = /root/work/<repo>`, marks it (title `<repo> (worker)`),
+   attaches a persistent `worker-no-delegate` instruction entry forbidding
+   `start-repo-work` in worker sessions, and forwards the task prompt
+   (`POST /api/session/{id}/prompt` with `{"text": ...}` that states the worker
+   role and the no-delegation rule).
+3. The global session replies with the new session ID and **does NOT wait or
+   poll** — it continues its own work or disconnects. Results can be read any
+   time via `GET /api/session/{id}/message`. If a session's directory is not
+   `/root` (i.e. it lives under `/root/work/...`), it is a **worker** and must
+   **refuse** to run `start-repo-work` — it just does the work. The repo's own
+   `AGENTS.md`, `.opencode/skills`, etc. apply in the worker session; you can
+   watch/steer it from your local client (session list shows all locations).
 4. The watcher stops the VM when **no** session is running anywhere and none
    was updated within the idle window — so multiple repo sessions are fine and
-   reading results between prompts does not stop the VM.
+   reading results between prompts does not stop the VM. "Delegate and let go"
+   is safe: the worker keeps the VM alive while it runs.
 
 ## GitHub App setup (repo-scoped agent access)
 
