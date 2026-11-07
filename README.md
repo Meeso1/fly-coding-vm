@@ -147,7 +147,10 @@ fly machine stop "$MID" -a "$APP"
    *New GitHub App* (or your org → Settings → Developer settings → GitHub Apps).
    - Name it e.g. `fly-coding-vm`. Disable the webhook (not needed).
    - **Repository permissions**: `Contents: Read and write`, `Metadata: Read`
-     (auto), `Pull requests: Read and write` (if agents open PRs).
+     (auto). `Pull requests: Read and write` is **optional** (only if agents
+     open PRs) — `vm-tools mint-gh-token` auto-intersects requested permissions
+     with the installation's grants, so a minimal `Contents: write` +
+     `Metadata: read` install works without it (no HTTP 422).
      No account/organization permissions.
    - *Where can this app be installed?* → **Only on this account** (or your org).
    - Save the **App ID**; click **Generate a private key** and download the `.pem`.

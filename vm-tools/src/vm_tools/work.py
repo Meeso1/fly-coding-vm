@@ -62,11 +62,14 @@ def start_work(
     return dest
 
 
-def save_token(repo: str, *, state_dir: Path | None = None) -> Path:
-    """Mint a fresh repo-scoped token and store it (0600) in the state dir."""
+def save_token(
+    repo: str, *, state_dir: Path | None = None, token: str | None = None
+) -> Path:
+    """Store a repo-scoped token (0600) in the state dir; mint one if absent."""
     state_dir = state_dir or Path(os.environ.get("VM_STATE_DIR", "/data/state"))
     state_dir.mkdir(parents=True, exist_ok=True)
-    token = mint_token(repo)
+    if token is None:
+        token = mint_token(repo)
     token_file = state_dir / "gh_token"
     token_file.write_text(token)
     token_file.chmod(0o600)

@@ -55,7 +55,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "mint-gh-token":
         token = mint_token(args.repo)
         if args.save:
-            path = save_token(args.repo)
+            path = save_token(args.repo, token=token)
             print(f"saved to {path}", file=sys.stderr)
         print(token)
         return 0
