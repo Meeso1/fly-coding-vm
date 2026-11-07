@@ -3,7 +3,7 @@
 # The machine is stopped by watcher.sh via the in-guest Machines API socket
 # (or manually with `fly machine stop`); compute billing is per-second.
 set -u
-export PATH="/root/.local/bin:${PATH}"
+export PATH="/root/.opencode/bin:/root/.local/bin:${PATH}"
 
 mkdir -p /data/logs /data/state /root/work
 

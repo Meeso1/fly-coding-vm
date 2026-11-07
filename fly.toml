@@ -1,4 +1,4 @@
-app = "fly-coding-vm" # TODO: pick a globally unique app name before first deploy.
+app = "fly-coding-vm"
 primary_region = "iad"
 
 [build]

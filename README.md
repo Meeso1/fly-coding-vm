@@ -118,6 +118,10 @@ curl -sS -u "opencode:$OC_PW" -X POST "http://127.0.0.1:4096/api/session/$SID/pr
 fly machine status "$MID" -a "$APP"
 fly logs -a "$APP"
 fly machine exec "$MID" -a "$APP" -- tail -n 100 /data/logs/watcher.log
+# note on `fly machine exec`: the remote command is ONE string after `--`,
+# word-split into argv and executed WITHOUT a shell (no pipes/redirects/`;`).
+# Missing `--` => "invalid number of arguments". Compound commands:
+#   fly machine exec "$MID" -a "$APP" -- "sh -c 'ps aux | grep opencode'"
 
 # stop manually (the watcher usually does this: 15 min idle or 12 h max uptime)
 fly machine stop "$MID" -a "$APP"
