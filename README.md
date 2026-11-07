@@ -41,6 +41,7 @@ A Fly.io Machine that acts as a remote vibe-coding VM:
 | `fly.toml` | app/region/VM size/restart policy/volume mount; **no services on purpose** |
 | `Dockerfile` | tooling: opencode, gh, git, uv + `vm-tools`, tmux, jq, openssl |
 | `vm-tools/` | the uv tools project (plain directory, installed as the `vm-tools` command: `start-work`, `mint-gh-token`, `watch`) |
+| `vmctl/` | local-only uv CLI wrapping flyctl (NOT in the Dockerfile; see "Local CLI" below) |
 | `entrypoint.sh` | bash: boots `opencode serve` + `vm-tools watch`, writes state, `sleep infinity` |
 | `skills/` | global OpenCode skills copied to `~/.config/opencode/skills` (`start-repo-work`, `gh-token`) |
 | `home/AGENTS.md` | agent rules on the VM (session flow, ephemeral FS, push, tokens) |
@@ -86,46 +87,92 @@ Re-deploy after changing the Dockerfile, scripts, skills or `vm-tools/`:
 fly deploy -a "$APP"     # then stop the machine again if needed
 ```
 
+(Once `FLY_APP` is set, `vmctl deploy` / `vmctl stop` do the same thing.)
+
+## Local CLI (vmctl)
+
+`vmctl/` is a small **local-only** uv CLI (NOT installed in the Docker image). It
+runs on the machine where `flyctl` lives, wraps the fly commands below, resolves
+the machine id automatically, and owns the `fly proxy` child process — so you no
+longer type the machine id or run `fly proxy ... &` by hand. Config comes
+**only from environment variables**; vmctl never opens a `.env` file — you
+`source` it yourself.
+
+Install (from this repo):
+
+```bash
+uv tool install ./vmctl             # or: uvx --from ./vmctl vmctl --help
+uv tool install --reinstall ./vmctl  # after editing vmctl/
+```
+
+Example `.env` (documented only — vmctl NEVER reads this file):
+
+```bash
+# .env
+export FLY_APP=fly-coding-vm
+export OPENCODE_PASSWORD="..."      # recover with: vmctl password
+# export OC_PORT=4096               # optional local port; in-VM server listens on 4096
+# export FLY_MACHINE_ID=...         # optional; auto-resolved from `fly machine list --json`
+```
+
+```bash
+source .env
+```
+
+| Var | Required | Default | Used for |
+|---|---|---|---|
+| `FLY_APP` | yes | — | app name in every `fly -a ...` command |
+| `FLY_MACHINE_ID` | no | auto (`fly machine list -a $FLY_APP --json` `[0].id`) | start/stop/status/exec/password |
+| `OC_PORT` | no | `4096` | local proxy port + API base URL `http://127.0.0.1:$OC_PORT` |
+| `OPENCODE_PASSWORD` | connect / prompt / sessions | — | Basic auth + passed to `opencode --server`; if missing, run `vmctl password` |
+
+Commands — add `--dry-run` **before** the command to print the `fly`/`curl`
+equivalents instead of running them (works without flyctl or a live app):
+
+```bash
+vmctl start             # start the machine + wait until started (id auto-resolved)
+vmctl stop              # stop the machine
+vmctl status            # fly machine status
+vmctl logs              # fly logs -a $FLY_APP
+vmctl logs --watcher    # tail -n 100 /data/logs/watcher.log via fly machine exec
+vmctl exec -- <cmd>     # run one remote command (single string after --, NO shell)
+vmctl password          # recover OPENCODE_PASSWORD from /data/state/opencode_password
+vmctl connect           # start fly proxy + local `opencode --server`; kills proxy on exit
+vmctl connect --web     # open the web UI instead (Ctrl-C stops the proxy); alias: vmctl proxy
+vmctl prompt "..."      # create a session + POST /api/session/{id}/prompt through the proxy
+vmctl sessions          # GET /api/session (add --json for raw output)
+vmctl deploy            # fly deploy -a $FLY_APP
+```
+
+`vmctl exec -- ...` joins your argv into the single string `fly machine exec`
+expects after `--` (it word-splits it and runs it **without a shell**). For
+pipes/compound commands wrap it: `vmctl exec -- sh -c 'tail -n 100
+/data/logs/watcher.log | grep stop'`. `vmctl connect` starts `fly proxy`, waits
+for the local port, runs the TUI/web UI, and terminates the proxy when it exits.
+
 ## Daily usage
 
 ```bash
-APP=fly-coding-vm
-MID=$(fly machine list -a "$APP" --json | jq -r '.[0].id')
+source .env                  # FLY_APP, OPENCODE_PASSWORD (vmctl reads env only)
 
-# start the VM and wait for it (cold start ~ seconds)
-fly machine start "$MID" -a "$APP"
-fly machine wait "$MID" -a "$APP" --state started
+vmctl start                  # start + wait; machine id resolved automatically
+vmctl connect                # proxy + local TUI in ONE process; exiting the TUI kills the proxy
+# ...or: vmctl connect --web  # opens http://127.0.0.1:4096 in a browser (Ctrl-C stops proxy)
 
-# forward the opencode server port over WireGuard (run in background)
-fly proxy 4096:4096 -a "$APP" &
+# from another terminal (the proxy stays owned by `vmctl connect`):
+vmctl prompt "Work on owner/repo: <task> (use the start-repo-work skill)"
+vmctl sessions               # each entry has location.directory, time, cost, tokens
+vmctl status
+vmctl logs                   # or: vmctl logs --watcher
+vmctl password               # recover the password if lost
+vmctl exec -- sh -c 'tail -n 100 /data/logs/watcher.log | grep stop'
 
-# connect with the local TUI — default location is the global $HOME session
-OC_PW=$(cat ~/.config/fly-coding-vm/opencode_password)
-OPENCODE_PASSWORD="$OC_PW" opencode --server http://127.0.0.1:4096
-# ...or open the web UI in a browser: http://127.0.0.1:4096 (password = $OC_PW)
-# (password recovery if lost: fly machine exec "$MID" -a "$APP" -- cat /data/state/opencode_password)
-
-# queue a prompt from a script instead of the TUI:
-SID=$(curl -sS -u "opencode:$OC_PW" -X POST http://127.0.0.1:4096/api/session \
-  -H 'Content-Type: application/json' \
-  -d '{"location":{"directory":"/root"},"title":"orchestration"}' | jq -r '.id')
-curl -sS -u "opencode:$OC_PW" -X POST "http://127.0.0.1:4096/api/session/$SID/prompt" \
-  -H 'Content-Type: application/json' \
-  -d '{"text":"Work on owner/repo: <task> (use the start-repo-work skill)"}'
-# watch any session: GET /api/session  (each entry has location.directory, time, cost, tokens)
-
-# inspect
-fly machine status "$MID" -a "$APP"
-fly logs -a "$APP"
-fly machine exec "$MID" -a "$APP" -- tail -n 100 /data/logs/watcher.log
-# note on `fly machine exec`: the remote command is ONE string after `--`,
-# word-split into argv and executed WITHOUT a shell (no pipes/redirects/`;`).
-# Missing `--` => "invalid number of arguments". Compound commands:
-#   fly machine exec "$MID" -a "$APP" -- "sh -c 'ps aux | grep opencode'"
-
-# stop manually (the watcher usually does this: 15 min idle or 12 h max uptime)
-fly machine stop "$MID" -a "$APP"
+vmctl stop                   # manual stop (the watcher usually does this)
+vmctl deploy                 # after changing Dockerfile/scripts/skills/vm-tools
 ```
+
+The watcher stops the VM when all sessions have been idle for 15 min (or after
+12 h max uptime); reading results between prompts does not stop it.
 
 ## Session flow (global session → repo-root sessions)
 
