@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # VM entrypoint: starts the OpenCode server and the idle watcher, then sleeps.
-# The machine is stopped by watcher.sh via the in-guest Machines API socket
+# The machine is stopped by `vm-tools watch` via the in-guest Machines API socket
 # (or manually with `fly machine stop`); compute billing is per-second.
 set -u
 export PATH="/root/.opencode/bin:/root/.local/bin:${PATH}"
@@ -25,9 +25,11 @@ ln -sfn /data/opencode-data /root/.local/share/opencode
 # Boot timestamp for the watcher's max-uptime backstop.
 date +%s > /data/state/started_at
 
-# 0.0.0.0 inside the VM is fine: the app exposes no fly services, so the port
-# is reachable only over the WireGuard private network (fly proxy / fly ssh).
-nohup opencode serve --hostname 0.0.0.0 --port 4096 >/data/logs/opencode-serve.log 2>&1 &
+# Bind `::` (dual-stack), not 0.0.0.0: fly proxy reaches the machine via its
+# private IPv6 address, so an IPv4-only bind is unreachable through it.
+# Inside the VM this is fine: the app exposes no fly services, so the port is
+# reachable only over the WireGuard private network (fly proxy / fly ssh).
+nohup opencode serve --hostname :: --port 4096 >/data/logs/opencode-serve.log 2>&1 &
 
 # Idle watcher (python, from the vm-tools project): stops the machine via
 # /.fly/api when no session is running and none was updated recently.
