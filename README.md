@@ -12,33 +12,38 @@ A Fly.io Machine that acts as a remote vibe-coding VM:
 - **No public ports.** `fly.toml` defines no services, so nothing is reachable
   from the internet. Access is WireGuard-only (flyctl auth to your org) *plus*
   the OpenCode server password (Basic auth / pairing). Two layers.
-- **Self-stopping:** `watcher.sh` on the VM polls
-  `GET /api/session/active` every 30 s and stops the machine via the in-guest
-  Machines API socket (`/.fly/api`) when no session has been active for
-  `IDLE_MINUTES` (default 15), with a hard `MAX_UPTIME_HOURS` (default 12)
-  backstop. Compute is billed per second, so this is what keeps the cost at
-  ~$0.4–1.8 per 8 h of coding (shared-cpu-8x/8 GB in `iad`).
-- **Entrypoint project is `$HOME` (`/root`)**: send prompts to a session there;
-  the agent runs `start-work.sh <owner/repo>` to clone into `/root/work/...`
-  and works there. Rootfs is wiped on stop, so repos are *not* kept on the
-  volume — everything is pushed to GitHub. The `/data` volume (5 GB) only
-  holds watcher state, logs, the server password and the OpenCode data dir
+- **Self-stopping:** `watcher.sh` polls the OpenCode API every 30 s and stops
+  the machine via the in-guest Machines API socket (`/.fly/api`) when no
+  session is running and none was updated for `IDLE_MINUTES` (default 15 min),
+  with a hard `MAX_UPTIME_HOURS` (default 12 h) backstop. Compute is billed per
+  second, so this keeps cost at ~$0.4–1.8 per 8 h of coding
+  (shared-cpu-8x/8 GB in `iad`).
+- **Sessions:** prompts go to a *global* session in `$HOME` (`/root`). For repo
+  work, the agent uses the **start-repo-work** skill, which runs
+  `vm-tools start-work <owner/repo>` (clones into `/root/work/<repo>`) and then
+  creates a **new session rooted at the repo** (`location.directory`), so the
+  repo's own `AGENTS.md` / `.opencode/skills` apply. The global session stays in
+  `$HOME` as the entrypoint. Idle detection looks at *all* sessions, so several
+  repo sessions can run in parallel; the VM stops only when everything is
+  idle. Rootfs is wiped on stop, so repos are *not* kept on the volume —
+  everything is pushed to GitHub. The `/data` volume (5 GB) only holds watcher
+  state, logs, the server password, the GitHub token, and the OpenCode data dir
   (symlinked from `~/.local/share/opencode`, so session history survives).
-- **GitHub access via a GitHub App**, installed on "only select repositories";
-  `mint-gh-token.sh` mints a 1 h installation token scoped to a *single* repo
-  at mint time (`repositories: [...]` param — enforced by GitHub).
+- **GitHub access via a GitHub App** installed on "only select repositories";
+  `vm-tools mint-gh-token` mints a 1 h installation token scoped to a *single*
+  repo at mint time (`repositories: [...]` param — enforced by GitHub).
 
 ## Files
 
 | File | Purpose |
 |---|---|
 | `fly.toml` | app/region/VM size/restart policy/volume mount; **no services on purpose** |
-| `Dockerfile` | tooling: opencode, gh, git, tmux, jq, openssl + scripts |
-| `entrypoint.sh` | boots opencode server + watcher, writes state, `sleep infinity` |
-| `watcher.sh` | idle/max-uptime watcher → self-stop via `/.fly/api` |
-| `bin/mint-gh-token.sh` | mint repo-scoped GitHub App token |
-| `bin/start-work.sh` | clone/update a repo into `/root/work/` with git auth set up |
-| `home/AGENTS.md` | agent rules on the VM (ephemeral FS, push before finishing, ...) |
+| `Dockerfile` | tooling: opencode, gh, git, uv + `vm-tools`, tmux, jq, openssl |
+| `vm-tools/` | **git submodule** → `../fly-vm-tools` (the uv tools project; installed as the `vm-tools` command). If you push this repo to GitHub, update the submodule URL in `.gitmodules`. Clone with `git clone --recurse-submodules`. |
+| `entrypoint.sh` | bash: boots opencode server + watcher, writes state, `sleep infinity` |
+| `watcher.sh` | bash: idle/max-uptime watcher → self-stop via `/.fly/api` |
+| `skills/` | global OpenCode skills copied to `~/.config/opencode/skills` (`start-repo-work`, `gh-token`) |
+| `home/AGENTS.md` | agent rules on the VM (session flow, ephemeral FS, push, tokens) |
 | `home/opencode.jsonc` | global opencode config on the VM (auto-approve permissions) |
 
 ## Prereqs (local machine)
@@ -53,6 +58,7 @@ fly auth login
 
 ```bash
 cd ~/Documents/Code/fly-coding-vm
+git submodule update --init   # fetch vm-tools
 
 # 1. pick a unique app name and set it in fly.toml (app = "...")
 APP=fly-coding-vm   # change if taken
@@ -75,10 +81,11 @@ fly deploy -a "$APP"
 fly machine stop "$(fly machine list -a "$APP" --json | jq -r '.[0].id')" -a "$APP"
 ```
 
-Re-deploy after changing the Dockerfile/scripts:
+Re-deploy after changing the Dockerfile/scripts/skills/submodule:
 
 ```bash
-fly deploy -a "$APP"     # then stop it again if you don't want it running now
+git submodule update --remote vm-tools   # if vm-tools changed
+fly deploy -a "$APP"                     # then stop the machine again if needed
 ```
 
 ## Daily usage
@@ -94,18 +101,20 @@ fly machine wait "$MID" -a "$APP" --state started
 # forward the opencode server port over WireGuard (run in background)
 fly proxy 4096:4096 -a "$APP" &
 
-# connect with the local TUI
+# connect with the local TUI — default location is the global $HOME session
 OC_PW=$(cat ~/.config/fly-coding-vm/opencode_password)
 OPENCODE_PASSWORD="$OC_PW" opencode --server http://127.0.0.1:4096
 # ...or open the web UI in a browser: http://127.0.0.1:4096 (password = $OC_PW)
 # (password recovery if lost: fly machine exec "$MID" -a "$APP" -- cat /data/state/opencode_password)
 
-# queue a prompt without the TUI (shapes per https://opencode.ai/docs/openapi.json):
-curl -u "opencode:$OC_PW" -X POST http://127.0.0.1:4096/api/session \
-  -H 'Content-Type: application/json' -d '{"title":"task"}'
-curl -u "opencode:$OC_PW" -X POST http://127.0.0.1:4096/api/session/<SESSION_ID>/prompt \
+# queue a prompt from a script instead of the TUI:
+SID=$(curl -sS -u "opencode:$OC_PW" -X POST http://127.0.0.1:4096/api/session \
   -H 'Content-Type: application/json' \
-  -d '{"parts":[{"type":"text","text":"Clone owner/repo via start-work.sh and implement ..."}]}'
+  -d '{"location":{"directory":"/root"},"title":"orchestration"}' | jq -r '.id')
+curl -sS -u "opencode:$OC_PW" -X POST "http://127.0.0.1:4096/api/session/$SID/prompt" \
+  -H 'Content-Type: application/json' \
+  -d '{"text":"Work on owner/repo: <task> (use the start-repo-work skill)"}'
+# watch any session: GET /api/session  (each entry has location.directory, time, cost, tokens)
 
 # inspect
 fly machine status "$MID" -a "$APP"
@@ -115,6 +124,20 @@ fly machine exec "$MID" -a "$APP" -- tail -n 100 /data/logs/watcher.log
 # stop manually (the watcher usually does this: 15 min idle or 12 h max uptime)
 fly machine stop "$MID" -a "$APP"
 ```
+
+## Session flow (global session → repo-root sessions)
+
+1. You connect (TUI/web/API) and prompt the **global session** in `/root`.
+2. The agent loads the **start-repo-work** skill: `vm-tools start-work
+   owner/repo` clones into `/root/work/<repo>`, then the skill creates a new
+   session with `location.directory = /root/work/<repo>` and forwards the task
+   prompt to it (`POST /api/session/{id}/prompt` with `{"text": ...}`).
+3. The repo-root session does the work — the repo's own `AGENTS.md`,
+   `.opencode/skills`, etc. apply there. You can watch/steer it from your local
+   client (session list shows all locations).
+4. The watcher stops the VM when **no** session is running anywhere and none
+   was updated within the idle window — so multiple repo sessions are fine and
+   reading results between prompts does not stop the VM.
 
 ## GitHub App setup (repo-scoped agent access)
 
@@ -126,20 +149,20 @@ fly machine stop "$MID" -a "$APP"
      No account/organization permissions.
    - *Where can this app be installed?* → **Only on this account** (or your org).
    - Save the **App ID**; click **Generate a private key** and download the `.pem`.
-2. **Install on select repos only**: on the app's page → *Install* → choose
-   **Only select repositories** and pick the repos agents may touch → Install.
-   (An installation scoped to "all repositories" would silently cover future
-   repos — don't do that.)
-3. Put `GITHUB_APP_ID` + the PEM as Fly secrets (see setup step 3). On the VM,
-   `start-work.sh owner/repo` mints a 1 h token scoped to just that repo.
+2. **Install on select repos only**: app page → *Install* → **Only select
+   repositories** → pick the repos agents may touch → Install. (Avoid
+   "all repositories" — it silently covers future repos.)
+3. Put `GITHUB_APP_ID` + the PEM as Fly secrets (setup step 3). On the VM,
+   `vm-tools start-work owner/repo` / `vm-tools mint-gh-token owner/repo --save`
+   mint a 1 h token scoped to just that repo.
 
 **Force pushes:** there is no per-app "no force push" toggle — use **branch
 protection** on each repo: Settings → Branches → add rule for `main` → leave
 *Allow force pushes* **unchecked** (blocked by default) and *Allow deletions*
 unchecked; optionally enable *Do not allow bypassing the above settings* and use
-*Restrict who can push* to limit pushes to the app. The app bot is not a repo
-admin, so the rule applies to it; normal (non-force) pushes and PR merges
-continue to work. (Newer alternative: repository **rulesets**, same settings.)
+*Restrict who can push* to name the app. The app bot is not a repo admin, so
+the rule applies to it; normal (non-force) pushes and PR merges still work.
+(Newer alternative: repository **rulesets**, same settings.)
 
 ## Cost notes
 

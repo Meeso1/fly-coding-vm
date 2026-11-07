@@ -1,0 +1,3 @@
+[submodule "vm-tools"]
+	path = vm-tools
+	url = ../fly-vm-tools

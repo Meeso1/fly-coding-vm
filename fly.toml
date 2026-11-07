@@ -1,31 +1,17 @@
-# Fly.io app config for the vibe-coding VM.
-# Deploy with: fly deploy   (builds the Dockerfile via Depot — free — and
-# updates the Machine to the new image; fully deterministic from this repo).
-
-# TODO: pick a globally unique app name before first deploy.
-app = "fly-coding-vm"
-primary_region = "iad" # cheapest (ewr also 1.0x); fra is 1.154x on compute
+app = "fly-coding-vm" # TODO: pick a globally unique app name before first deploy.
+primary_region = "iad"
 
 [build]
   dockerfile = "Dockerfile"
 
-# "mid" config from the cost estimate: shared-cpu-8x + 8GB = $0.0744/h in iad.
 [[vm]]
   cpu_kind = "shared"
   cpus = 8
   memory_mb = 8192
 
-# If PID 1 ever exits, stop instead of restarting (we self-stop via the watcher).
 [[restart]]
   policy = "never"
 
-# Small persistent volume for watcher state, logs and the opencode data dir.
-# Create it before the first deploy:
-#   fly volumes create data --region iad --size 5 -a <app>
 [mounts]
   source = "data"
   destination = "/data"
-
-# Deliberately NO [http_service] / [[services]] / ports: nothing is publicly
-# reachable. Access is only via Fly's WireGuard private network
-# (fly proxy / fly ssh / fly machine exec) plus the opencode server password.
