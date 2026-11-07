@@ -19,8 +19,8 @@ RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
 RUN curl -fsSL https://opencode.ai/install | bash
 ENV PATH="/root/.local/bin:${PATH}"
 
-# uv + the vm-tools CLI project (git submodule at vm-tools/, installed as the
-# `vm-tools` command). The VM's OpenCode skills instruct the agent to run it.
+# uv + the vm-tools CLI project (plain directory at vm-tools/, installed as
+# the `vm-tools` command). The VM's OpenCode skills instruct the agent to run it.
 RUN curl -LsSf https://astral.sh/uv/install.sh | sh
 COPY vm-tools /opt/vm-tools
 RUN uv tool install /opt/vm-tools

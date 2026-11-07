@@ -40,7 +40,7 @@ A Fly.io Machine that acts as a remote vibe-coding VM:
 |---|---|
 | `fly.toml` | app/region/VM size/restart policy/volume mount; **no services on purpose** |
 | `Dockerfile` | tooling: opencode, gh, git, uv + `vm-tools`, tmux, jq, openssl |
-| `vm-tools/` | **git submodule** → `../fly-vm-tools` (the uv tools project; installed as the `vm-tools` command: `start-work`, `mint-gh-token`, `watch`). If you push this repo to GitHub, update the submodule URL in `.gitmodules`. Clone with `git clone --recurse-submodules`. |
+| `vm-tools/` | the uv tools project (plain directory, installed as the `vm-tools` command: `start-work`, `mint-gh-token`, `watch`) |
 | `entrypoint.sh` | bash: boots `opencode serve` + `vm-tools watch`, writes state, `sleep infinity` |
 | `skills/` | global OpenCode skills copied to `~/.config/opencode/skills` (`start-repo-work`, `gh-token`) |
 | `home/AGENTS.md` | agent rules on the VM (session flow, ephemeral FS, push, tokens) |
@@ -58,7 +58,6 @@ fly auth login
 
 ```bash
 cd ~/Documents/Code/fly-coding-vm
-git submodule update --init   # fetch vm-tools
 
 # 1. pick a unique app name and set it in fly.toml (app = "...")
 APP=fly-coding-vm   # change if taken
@@ -84,8 +83,7 @@ fly machine stop "$(fly machine list -a "$APP" --json | jq -r '.[0].id')" -a "$A
 Re-deploy after changing the Dockerfile/scripts/skills/submodule:
 
 ```bash
-git submodule update --remote vm-tools   # if vm-tools changed
-fly deploy -a "$APP"                     # then stop the machine again if needed
+fly deploy -a "$APP"     # then stop the machine again if needed
 ```
 
 ## Daily usage
