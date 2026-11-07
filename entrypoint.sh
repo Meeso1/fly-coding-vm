@@ -28,7 +28,10 @@ date +%s > /data/state/started_at
 # 0.0.0.0 inside the VM is fine: the app exposes no fly services, so the port
 # is reachable only over the WireGuard private network (fly proxy / fly ssh).
 nohup opencode serve --hostname 0.0.0.0 --port 4096 >/data/logs/opencode-serve.log 2>&1 &
-nohup /usr/local/bin/watcher.sh >/data/logs/watcher.log 2>&1 &
+
+# Idle watcher (python, from the vm-tools project): stops the machine via
+# /.fly/api when no session is running and none was updated recently.
+nohup vm-tools watch >/data/logs/watcher.log 2>&1 &
 
 echo "entrypoint: opencode server on :4096, watcher running, pid $$"
 exec sleep infinity

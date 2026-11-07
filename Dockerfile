@@ -25,9 +25,9 @@ RUN curl -LsSf https://astral.sh/uv/install.sh | sh
 COPY vm-tools /opt/vm-tools
 RUN uv tool install /opt/vm-tools
 
-# VM scripts (entrypoint + watcher stay bash)
-COPY entrypoint.sh watcher.sh /usr/local/bin/
-RUN chmod +x /usr/local/bin/*.sh
+# VM entrypoint (bash; the watcher itself is `vm-tools watch`, python)
+COPY entrypoint.sh /usr/local/bin/
+RUN chmod +x /usr/local/bin/entrypoint.sh
 
 # Global OpenCode skills for the VM — available in every session/project,
 # including /root/work/<repo>; repo-local .opencode/skills override by ID.

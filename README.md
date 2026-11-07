@@ -12,12 +12,13 @@ A Fly.io Machine that acts as a remote vibe-coding VM:
 - **No public ports.** `fly.toml` defines no services, so nothing is reachable
   from the internet. Access is WireGuard-only (flyctl auth to your org) *plus*
   the OpenCode server password (Basic auth / pairing). Two layers.
-- **Self-stopping:** `watcher.sh` polls the OpenCode API every 30 s and stops
-  the machine via the in-guest Machines API socket (`/.fly/api`) when no
-  session is running and none was updated for `IDLE_MINUTES` (default 15 min),
-  with a hard `MAX_UPTIME_HOURS` (default 12 h) backstop. Compute is billed per
-  second, so this keeps cost at ~$0.4–1.8 per 8 h of coding
-  (shared-cpu-8x/8 GB in `iad`).
+- **Self-stopping:** `vm-tools watch` (python, from the `vm-tools` submodule)
+  polls the OpenCode API every 30 s — `GET /api/session/active` plus fully
+  cursor-paginated `GET /api/session` — and stops the machine via the in-guest
+  Machines API unix socket (`/.fly/api`) when no session is running and none
+  was updated for `IDLE_MINUTES` (default 15 min), with a hard
+  `MAX_UPTIME_HOURS` (default 12 h) backstop. Compute is billed per second, so
+  this keeps cost at ~$0.4–1.8 per 8 h of coding (shared-cpu-8x/8 GB in `iad`).
 - **Sessions:** prompts go to a *global* session in `$HOME` (`/root`). For repo
   work, the agent uses the **start-repo-work** skill, which runs
   `vm-tools start-work <owner/repo>` (clones into `/root/work/<repo>`) and then
