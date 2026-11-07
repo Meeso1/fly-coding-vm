@@ -12,7 +12,7 @@ A Fly.io Machine that acts as a remote vibe-coding VM:
 - **No public ports.** `fly.toml` defines no services, so nothing is reachable
   from the internet. Access is WireGuard-only (flyctl auth to your org) *plus*
   the OpenCode server password (Basic auth / pairing). Two layers.
-- **Self-stopping:** `vm-tools watch` (python, from the `vm-tools` submodule)
+- **Self-stopping:** `vm-tools watch` (python, from the `vm-tools/` directory)
   polls the OpenCode API every 30 s — `GET /api/session/active` plus fully
   cursor-paginated `GET /api/session` — and stops the machine via the in-guest
   Machines API unix socket (`/.fly/api`) when no session is running and none
@@ -80,7 +80,7 @@ fly deploy -a "$APP"
 fly machine stop "$(fly machine list -a "$APP" --json | jq -r '.[0].id')" -a "$APP"
 ```
 
-Re-deploy after changing the Dockerfile/scripts/skills/submodule:
+Re-deploy after changing the Dockerfile, scripts, skills or `vm-tools/`:
 
 ```bash
 fly deploy -a "$APP"     # then stop the machine again if needed
