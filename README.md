@@ -40,9 +40,8 @@ A Fly.io Machine that acts as a remote vibe-coding VM:
 |---|---|
 | `fly.toml` | app/region/VM size/restart policy/volume mount; **no services on purpose** |
 | `Dockerfile` | tooling: opencode, gh, git, uv + `vm-tools`, tmux, jq, openssl |
-| `vm-tools/` | **git submodule** → `../fly-vm-tools` (the uv tools project; installed as the `vm-tools` command). If you push this repo to GitHub, update the submodule URL in `.gitmodules`. Clone with `git clone --recurse-submodules`. |
-| `entrypoint.sh` | bash: boots opencode server + watcher, writes state, `sleep infinity` |
-| `watcher.sh` | bash: idle/max-uptime watcher → self-stop via `/.fly/api` |
+| `vm-tools/` | **git submodule** → `../fly-vm-tools` (the uv tools project; installed as the `vm-tools` command: `start-work`, `mint-gh-token`, `watch`). If you push this repo to GitHub, update the submodule URL in `.gitmodules`. Clone with `git clone --recurse-submodules`. |
+| `entrypoint.sh` | bash: boots `opencode serve` + `vm-tools watch`, writes state, `sleep infinity` |
 | `skills/` | global OpenCode skills copied to `~/.config/opencode/skills` (`start-repo-work`, `gh-token`) |
 | `home/AGENTS.md` | agent rules on the VM (session flow, ephemeral FS, push, tokens) |
 | `home/opencode.jsonc` | global opencode config on the VM (auto-approve permissions) |
