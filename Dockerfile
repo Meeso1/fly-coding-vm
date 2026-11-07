@@ -15,8 +15,8 @@ RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
     && apt-get update && apt-get install -y gh \
     && rm -rf /var/lib/apt/lists/*
 
-# OpenCode (the install script puts the binary in /root/.opencode/bin)
-RUN curl -fsSL https://opencode.ai/install | bash
+# OpenCode v2 (installs to /root/.opencode/bin), pinned for deterministic builds
+RUN curl -fsSL https://opencode.ai/v2/install | bash -s -- --version 2.2.6
 ENV PATH="/root/.opencode/bin:/root/.local/bin:${PATH}"
 
 # uv + the vm-tools CLI project (plain directory at vm-tools/, installed as
