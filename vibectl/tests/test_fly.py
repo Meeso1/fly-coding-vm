@@ -2,8 +2,8 @@
 
 import pytest
 
-from vmctl.config import Config, ConfigError
-from vmctl.fly import Runner, parse_machine_id
+from vibectl.config import Config, ConfigError
+from vibectl.fly import Runner, parse_machine_id
 
 SAMPLE = (
     '[{"id":"3287e6a","name":"fly-coding-vm","state":"stopped"},'

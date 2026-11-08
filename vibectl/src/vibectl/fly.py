@@ -112,7 +112,7 @@ class Runner:
 def proxy_up(r: Runner) -> Iterator[None]:
     """Yield with the local OC port forwarded to the VM's :4096.
 
-    Reuses an already-open port (e.g. a running ``vmctl connect``) so a second
+    Reuses an already-open port (e.g. a running ``vibectl connect``) so a second
     proxy does not collide. Otherwise starts ``fly proxy`` as a CHILD of this
     process, waits for the local port, and terminates it on exit. In
     ``--dry-run`` it only prints the command.

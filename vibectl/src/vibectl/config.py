@@ -1,6 +1,6 @@
-"""Environment-only configuration for vmctl.
+"""Environment-only configuration for vibectl.
 
-Config is read exclusively from ``os.environ``. vmctl NEVER opens a ``.env``
+Config is read exclusively from ``os.environ``. vibectl NEVER opens a ``.env``
 file: the user sources it in their shell first. A missing required var raises a
 friendly :class:`ConfigError` that tells the user to ``source .env``.
 """
@@ -28,7 +28,7 @@ class Config:
 _ENV_HINT = (
     "Set the required env vars first, e.g.:\n"
     "  source .env          # FLY_APP, OPENCODE_PASSWORD, OC_PORT, ...\n"
-    "vmctl reads config ONLY from the environment; it never opens a .env file."
+    "vibectl reads config ONLY from the environment; it never opens a .env file."
 )
 
 
@@ -63,7 +63,7 @@ def load(dry_run: bool = False, *, need_password: bool = False) -> Config:
         password = _require(
             "OPENCODE_PASSWORD",
             extra=(
-                "Lost it? Run `vmctl password` to recover it from "
+                "Lost it? Run `vibectl password` to recover it from "
                 "/data/state/opencode_password, then export it (or source .env)."
             ),
         )
@@ -83,5 +83,5 @@ def require_fly(dry_run: bool = False) -> None:
     if shutil.which("fly") is None:
         raise ConfigError(
             "fly (flyctl) not found on PATH. Install it (e.g. `brew install flyctl`) "
-            "and run `fly auth login`. vmctl is a LOCAL tool that drives flyctl."
+            "and run `fly auth login`. vibectl is a LOCAL tool that drives flyctl."
         )

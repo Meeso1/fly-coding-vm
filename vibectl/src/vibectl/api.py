@@ -55,7 +55,7 @@ def request(r: Runner, method: str, path: str, *, body: dict | None = None) -> d
     except urllib.error.URLError as exc:
         raise ConfigError(
             f"OpenCode API unreachable at {url} ({exc.reason}); "
-            "is `vmctl connect` / the proxy running?"
+            "is `vibectl connect` / the proxy running?"
         ) from exc
     return json.loads(raw) if raw.strip() else {}
 

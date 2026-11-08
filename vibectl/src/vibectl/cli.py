@@ -1,4 +1,4 @@
-"""vmctl CLI entrypoint: a local wrapper around flyctl for the fly-coding-vm."""
+"""vibectl CLI entrypoint: a local wrapper around flyctl for the fly-coding-vm."""
 
 from __future__ import annotations
 
@@ -20,7 +20,7 @@ _PASSWORD_COMMANDS = frozenset({"connect", "proxy", "prompt", "sessions"})
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="vmctl",
+        prog="vibectl",
         description="Local CLI for the fly-coding-vm (runs where flyctl is installed).",
     )
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
@@ -48,7 +48,7 @@ def _parser() -> argparse.ArgumentParser:
     p_connect.add_argument("--web", action="store_true", help="open web UI; Ctrl-C stops the proxy")
     p_prompt = sub.add_parser("prompt", help="create a session + POST a prompt through the proxy")
     p_prompt.add_argument("text", help="prompt text")
-    p_prompt.add_argument("--title", default="vmctl prompt")
+    p_prompt.add_argument("--title", default="vibectl prompt")
     p_prompt.add_argument("--dir", dest="directory", default="/root")
     p_sessions = sub.add_parser("sessions", help="list sessions (GET /api/session)")
     p_sessions.add_argument("--json", action="store_true", help="print raw JSON")
@@ -106,7 +106,7 @@ def _dispatch(args: argparse.Namespace, r: Runner) -> int:
             remote = remote[1:]
         if not remote:
             raise ConfigError(
-                "usage: vmctl exec -- <command> [args...]  (ONE string after --, no shell)"
+                "usage: vibectl exec -- <command> [args...]  (ONE string after --, no shell)"
             )
         return int(r.machine_exec(remote))
     if cmd == "password":
@@ -123,7 +123,7 @@ def _dispatch(args: argparse.Namespace, r: Runner) -> int:
         sessions(r, as_json=args.json)
         return 0
     if cmd == "deploy":
-        print("note: fly deploy starts the machine; run `vmctl stop` if idle.", file=sys.stderr)
+        print("note: fly deploy starts the machine; run `vibectl stop` if idle.", file=sys.stderr)
         return r.run(["deploy", "-a", r.cfg.app])
     return 2
 

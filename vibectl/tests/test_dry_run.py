@@ -1,6 +1,6 @@
 """--dry-run renders fly/curl commands without needing flyctl or a live app."""
 
-from vmctl import cli
+from vibectl import cli
 
 
 def _env(monkeypatch):

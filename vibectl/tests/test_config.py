@@ -1,6 +1,6 @@
 """Config comes ONLY from env, never from a .env file."""
 
-from vmctl import cli
+from vibectl import cli
 
 
 def test_missing_fly_app_errors_and_mentions_sourcing(tmp_path, monkeypatch, capsys):

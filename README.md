@@ -41,7 +41,7 @@ A Fly.io Machine that acts as a remote vibe-coding VM:
 | `fly.toml` | app/region/VM size/restart policy/volume mount; **no services on purpose** |
 | `Dockerfile` | tooling: opencode, gh, git, uv + `vm-tools`, tmux, jq, openssl |
 | `vm-tools/` | the uv tools project (plain directory, installed as the `vm-tools` command: `start-work`, `mint-gh-token`, `watch`) |
-| `vmctl/` | local-only uv CLI wrapping flyctl (NOT in the Dockerfile; see "Local CLI" below) |
+| `vibectl/` | local-only uv CLI wrapping flyctl (NOT in the Dockerfile; see "Local CLI" below) |
 | `entrypoint.sh` | bash: boots `opencode serve` + `vm-tools watch`, writes state, `sleep infinity` |
 | `skills/` | global OpenCode skills copied to `~/.config/opencode/skills` (`start-repo-work`, `gh-token`) |
 | `home/AGENTS.md` | agent rules on the VM (session flow, ephemeral FS, push, tokens) |
@@ -87,30 +87,30 @@ Re-deploy after changing the Dockerfile, scripts, skills or `vm-tools/`:
 fly deploy -a "$APP"     # then stop the machine again if needed
 ```
 
-(Once `FLY_APP` is set, `vmctl deploy` / `vmctl stop` do the same thing.)
+(Once `FLY_APP` is set, `vibectl deploy` / `vibectl stop` do the same thing.)
 
-## Local CLI (vmctl)
+## Local CLI (vibectl)
 
-`vmctl/` is a small **local-only** uv CLI (NOT installed in the Docker image). It
+`vibectl/` is a small **local-only** uv CLI (NOT installed in the Docker image). It
 runs on the machine where `flyctl` lives, wraps the fly commands below, resolves
 the machine id automatically, and owns the `fly proxy` child process — so you no
 longer type the machine id or run `fly proxy ... &` by hand. Config comes
-**only from environment variables**; vmctl never opens a `.env` file — you
+**only from environment variables**; vibectl never opens a `.env` file — you
 `source` it yourself.
 
 Install (from this repo):
 
 ```bash
-uv tool install ./vmctl             # or: uvx --from ./vmctl vmctl --help
-uv tool install --reinstall ./vmctl  # after editing vmctl/
+uv tool install ./vibectl             # or: uvx --from ./vibectl vibectl --help
+uv tool install --reinstall ./vibectl  # after editing vibectl/
 ```
 
-Example `.env` (documented only — vmctl NEVER reads this file):
+Example `.env` (documented only — vibectl NEVER reads this file):
 
 ```bash
 # .env
 export FLY_APP=fly-coding-vm
-export OPENCODE_PASSWORD="..."      # recover with: vmctl password
+export OPENCODE_PASSWORD="..."      # recover with: vibectl password
 # export OC_PORT=4096               # optional local port; in-VM server listens on 4096
 # export FLY_MACHINE_ID=...         # optional; auto-resolved from `fly machine list --json`
 ```
@@ -124,51 +124,51 @@ source .env
 | `FLY_APP` | yes | — | app name in every `fly -a ...` command |
 | `FLY_MACHINE_ID` | no | auto (`fly machine list -a $FLY_APP --json` `[0].id`) | start/stop/status/exec/password |
 | `OC_PORT` | no | `4096` | local proxy port + API base URL `http://127.0.0.1:$OC_PORT` |
-| `OPENCODE_PASSWORD` | connect / prompt / sessions | — | Basic auth + passed to `opencode --server`; if missing, run `vmctl password` |
+| `OPENCODE_PASSWORD` | connect / prompt / sessions | — | Basic auth + passed to `opencode --server`; if missing, run `vibectl password` |
 
 Commands — add `--dry-run` **before** the command to print the `fly`/`curl`
 equivalents instead of running them (works without flyctl or a live app):
 
 ```bash
-vmctl start             # start the machine + wait until started (id auto-resolved)
-vmctl stop              # stop the machine
-vmctl status            # fly machine status
-vmctl logs              # fly logs -a $FLY_APP
-vmctl logs --watcher    # tail -n 100 /data/logs/watcher.log via fly machine exec
-vmctl exec -- <cmd>     # run one remote command (single string after --, NO shell)
-vmctl password          # recover OPENCODE_PASSWORD from /data/state/opencode_password
-vmctl connect           # start fly proxy + local `opencode --server`; kills proxy on exit
-vmctl connect --web     # open the web UI instead (Ctrl-C stops the proxy); alias: vmctl proxy
-vmctl prompt "..."      # create a session + POST /api/session/{id}/prompt through the proxy
-vmctl sessions          # GET /api/session (add --json for raw output)
-vmctl deploy            # fly deploy -a $FLY_APP
+vibectl start             # start the machine + wait until started (id auto-resolved)
+vibectl stop              # stop the machine
+vibectl status            # fly machine status
+vibectl logs              # fly logs -a $FLY_APP
+vibectl logs --watcher    # tail -n 100 /data/logs/watcher.log via fly machine exec
+vibectl exec -- <cmd>     # run one remote command (single string after --, NO shell)
+vibectl password          # recover OPENCODE_PASSWORD from /data/state/opencode_password
+vibectl connect           # start fly proxy + local `opencode --server`; kills proxy on exit
+vibectl connect --web     # open the web UI instead (Ctrl-C stops the proxy); alias: vibectl proxy
+vibectl prompt "..."      # create a session + POST /api/session/{id}/prompt through the proxy
+vibectl sessions          # GET /api/session (add --json for raw output)
+vibectl deploy            # fly deploy -a $FLY_APP
 ```
 
-`vmctl exec -- ...` joins your argv into the single string `fly machine exec`
+`vibectl exec -- ...` joins your argv into the single string `fly machine exec`
 expects after `--` (it word-splits it and runs it **without a shell**). For
-pipes/compound commands wrap it: `vmctl exec -- sh -c 'tail -n 100
-/data/logs/watcher.log | grep stop'`. `vmctl connect` starts `fly proxy`, waits
+pipes/compound commands wrap it: `vibectl exec -- sh -c 'tail -n 100
+/data/logs/watcher.log | grep stop'`. `vibectl connect` starts `fly proxy`, waits
 for the local port, runs the TUI/web UI, and terminates the proxy when it exits.
 
 ## Daily usage
 
 ```bash
-source .env                  # FLY_APP, OPENCODE_PASSWORD (vmctl reads env only)
+source .env                  # FLY_APP, OPENCODE_PASSWORD (vibectl reads env only)
 
-vmctl start                  # start + wait; machine id resolved automatically
-vmctl connect                # proxy + local TUI in ONE process; exiting the TUI kills the proxy
-# ...or: vmctl connect --web  # opens http://127.0.0.1:4096 in a browser (Ctrl-C stops proxy)
+vibectl start                  # start + wait; machine id resolved automatically
+vibectl connect                # proxy + local TUI in ONE process; exiting the TUI kills the proxy
+# ...or: vibectl connect --web  # opens http://127.0.0.1:4096 in a browser (Ctrl-C stops proxy)
 
-# from another terminal (the proxy stays owned by `vmctl connect`):
-vmctl prompt "Work on owner/repo: <task> (use the start-repo-work skill)"
-vmctl sessions               # each entry has location.directory, time, cost, tokens
-vmctl status
-vmctl logs                   # or: vmctl logs --watcher
-vmctl password               # recover the password if lost
-vmctl exec -- sh -c 'tail -n 100 /data/logs/watcher.log | grep stop'
+# from another terminal (the proxy stays owned by `vibectl connect`):
+vibectl prompt "Work on owner/repo: <task> (use the start-repo-work skill)"
+vibectl sessions               # each entry has location.directory, time, cost, tokens
+vibectl status
+vibectl logs                   # or: vibectl logs --watcher
+vibectl password               # recover the password if lost
+vibectl exec -- sh -c 'tail -n 100 /data/logs/watcher.log | grep stop'
 
-vmctl stop                   # manual stop (the watcher usually does this)
-vmctl deploy                 # after changing Dockerfile/scripts/skills/vm-tools
+vibectl stop                   # manual stop (the watcher usually does this)
+vibectl deploy                 # after changing Dockerfile/scripts/skills/vm-tools
 ```
 
 The watcher stops the VM when all sessions have been idle for 15 min (or after
