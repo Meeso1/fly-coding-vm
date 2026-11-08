@@ -1,4 +1,4 @@
 *.log
 .DS_Store
 .env
-vibecoding-with-fly-io.private-key.pem
+*.pem
