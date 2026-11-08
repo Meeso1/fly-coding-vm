@@ -21,7 +21,9 @@ def parse_machine_id(payload: str) -> str:
         raise ConfigError(f"could not parse `fly machine list --json`: {exc}") from exc
     if not isinstance(machines, list) or not machines:
         raise ConfigError(
-            "no machines found for FLY_APP; check `fly machine list -a $FLY_APP --json`"
+            "no machines found for FLY_APP; is the env file from `vibectl init` "
+            "sourced (e.g. `source <app>.env`) and does `fly machine list -a $FLY_APP "
+            "--json` work?"
         )
     # Prefer a live machine over a destroyed one; fall back to the first entry.
     live = [m for m in machines if isinstance(m, dict) and m.get("state") != "destroyed"]

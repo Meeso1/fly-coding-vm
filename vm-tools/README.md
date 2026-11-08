@@ -1,8 +1,8 @@
 # fly-vm-tools
 
 One [uv](https://docs.astral.sh/uv/) project holding the small CLI tools used on
-the fly-coding-vm agent VM. Installed into the VM image as the `vm-tools`
-command (see `../fly-coding-vm/Dockerfile`); the VM's OpenCode skills instruct
+a Fly.io coding VM (see the root README). Installed into the VM image as the
+`vm-tools` command (see `../Dockerfile`); the VM's OpenCode skills instruct
 the agent to run these.
 
 ## Commands

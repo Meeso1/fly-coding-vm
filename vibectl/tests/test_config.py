@@ -13,7 +13,7 @@ def test_missing_fly_app_errors_and_mentions_sourcing(tmp_path, monkeypatch, cap
     captured = capsys.readouterr()
 
     assert rc != 0
-    assert "source .env" in captured.err
+    assert "vibectl init" in captured.err
     assert "should_not_be_read" not in captured.err
     assert "should_not_be_read" not in captured.out
 

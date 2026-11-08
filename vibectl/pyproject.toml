@@ -1,7 +1,7 @@
 [project]
 name = "vibectl"
 version = "0.1.0"
-description = "Local CLI to manage the fly-coding-vm from the machine running flyctl"
+description = "Set up and control a Fly.io coding VM from the machine running flyctl"
 requires-python = ">=3.11"
 dependencies = []                      # stdlib only: argparse, subprocess, urllib
 

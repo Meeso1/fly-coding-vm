@@ -1,5 +1,5 @@
-app = "fly-coding-vm"
-primary_region = "iad"
+app = "coding-vm" # placeholder: vibectl always passes `-a $FLY_APP`; a bare `fly deploy` targets this name (must be globally unique)
+primary_region = "iad" # machines are deployed here; `vibectl init --region <r>` rewrites this line
 
 [build]
   dockerfile = "Dockerfile"
@@ -7,7 +7,7 @@ primary_region = "iad"
 [[vm]]
   cpu_kind = "shared"
   cpus = 8
-  memory_mb = 8192
+  memory_mb = 8192 # shared-cpu-8x/8 GB ~= $0.07/h; tune to your needs
 
 [[restart]]
   policy = "never"

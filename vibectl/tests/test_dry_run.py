@@ -4,7 +4,7 @@ from vibectl import cli
 
 
 def _env(monkeypatch):
-    monkeypatch.setenv("FLY_APP", "fly-coding-vm")
+    monkeypatch.setenv("FLY_APP", "my-vm")
     monkeypatch.setenv("OPENCODE_PASSWORD", "dummy-secret")
     monkeypatch.delenv("FLY_MACHINE_ID", raising=False)
     monkeypatch.delenv("OC_PORT", raising=False)
@@ -15,7 +15,7 @@ def test_dry_run_start(monkeypatch, capsys):
     rc = cli.main(["--dry-run", "start"])
     out = capsys.readouterr().out
     assert rc == 0
-    assert "fly machine list -a fly-coding-vm --json" in out
+    assert "fly machine list -a my-vm --json" in out
     assert "fly machine start" in out
     assert "fly machine wait" in out and "--state started" in out
 

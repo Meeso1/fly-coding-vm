@@ -14,7 +14,7 @@ from .work import save_token, start_work
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="vm-tools",
-        description="Small CLI tools for the fly-coding-vm agent VM.",
+        description="Small CLI tools for a Fly.io coding VM.",
     )
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     sub = parser.add_subparsers(dest="command", required=True)

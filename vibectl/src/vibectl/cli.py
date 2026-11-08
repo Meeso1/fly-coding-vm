@@ -1,4 +1,4 @@
-"""vibectl CLI entrypoint: a local wrapper around flyctl for the fly-coding-vm."""
+"""vibectl CLI entrypoint: local setup (`init`) and control of a coding VM on Fly."""
 
 from __future__ import annotations
 
@@ -14,6 +14,7 @@ from . import __version__
 from .api import prompt, sessions
 from .config import ConfigError, load
 from .fly import Runner, proxy_up
+from .provision import init as init_cmd
 
 _PASSWORD_COMMANDS = frozenset({"connect", "proxy", "prompt", "sessions"})
 
@@ -21,7 +22,7 @@ _PASSWORD_COMMANDS = frozenset({"connect", "proxy", "prompt", "sessions"})
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="vibectl",
-        description="Local CLI for the fly-coding-vm (runs where flyctl is installed).",
+        description="Set up and control a coding VM on Fly (runs where flyctl is installed).",
     )
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     parser.add_argument(
@@ -30,6 +31,40 @@ def _parser() -> argparse.ArgumentParser:
         help="print the fly/curl commands instead of running them (no fly/network needed)",
     )
     sub = parser.add_subparsers(dest="command", required=True)
+
+    p_init = sub.add_parser(
+        "init",
+        help="one-time setup for a NEW app: create app + volume + secrets, write <app>.env",
+    )
+    p_init.add_argument("app", help="Fly app name (globally unique)")
+    p_init.add_argument(
+        "--region",
+        help="region for machine + volume (default: fly.toml's primary_region); "
+        "differs from it -> fly.toml is rewritten",
+    )
+    p_init.add_argument("--volume-size", type=int, default=5, help="volume GB (default: 5)")
+    p_init.add_argument(
+        "--config", default="fly.toml", help="fly.toml path (default: ./fly.toml)"
+    )
+    p_init.add_argument(
+        "--env-file", help="env file to write (default: <app>.env); source it before other commands"
+    )
+    p_init.add_argument(
+        "--password", help="reuse an explicit OPENCODE_PASSWORD instead of generating one"
+    )
+    p_init.add_argument(
+        "--github-app-id", help="GitHub App id; default: $GITHUB_APP_ID"
+    )
+    p_init.add_argument(
+        "--pem", help="path to the GitHub App private key (.pem); default: $GITHUB_APP_PRIVATE_KEY"
+    )
+    p_init.add_argument(
+        "--openrouter-key", help="OpenRouter key; default: $OPENROUTER_API_KEY"
+    )
+    p_init.add_argument("--force", action="store_true", help="overwrite an existing env file")
+    p_init.add_argument(
+        "--deploy", action="store_true", help="also run `fly deploy` after the setup steps"
+    )
 
     sub.add_parser("start", help="start the machine + wait until started")
     sub.add_parser("stop", help="stop the machine")
@@ -82,6 +117,8 @@ def _connect(args: argparse.Namespace, r: Runner) -> int:
 
 def _dispatch(args: argparse.Namespace, r: Runner) -> int:
     cmd = args.command
+    if cmd == "init":
+        return init_cmd(r, args)
     if cmd == "start":
         mid = r.machine_id()
         rc = r.run(["machine", "start", mid, "-a", r.cfg.app])
@@ -132,7 +169,13 @@ def main(argv: list[str] | None = None) -> int:
     """Parse args, load env-only config, dispatch; return the process exit code."""
     args = _parser().parse_args(argv)
     try:
-        cfg = load(args.dry_run, need_password=args.command in _PASSWORD_COMMANDS)
+        # `vibectl init <app>` carries the app as its CLI argument; it must work
+        # before any env file exists, so no FLY_APP requirement there.
+        cfg = load(
+            args.dry_run,
+            need_password=args.command in _PASSWORD_COMMANDS,
+            app=args.app if args.command == "init" else None,
+        )
         return _dispatch(args, Runner(cfg))
     except ConfigError as exc:
         print(f"error: {exc}", file=sys.stderr)

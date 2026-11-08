@@ -6,8 +6,8 @@ from vibectl.config import Config, ConfigError
 from vibectl.fly import Runner, parse_machine_id
 
 SAMPLE = (
-    '[{"id":"3287e6a","name":"fly-coding-vm","state":"stopped"},'
-    '{"id":"aaa111","name":"fly-coding-vm","state":"started"}]'
+    '[{"id":"3287e6a","name":"my-vm","state":"stopped"},'
+    '{"id":"aaa111","name":"my-vm","state":"started"}]'
 )
 
 

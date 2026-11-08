@@ -26,9 +26,9 @@ class Config:
 
 
 _ENV_HINT = (
-    "Set the required env vars first, e.g.:\n"
-    "  source .env          # FLY_APP, OPENCODE_PASSWORD, OC_PORT, ...\n"
-    "vibectl reads config ONLY from the environment; it never opens a .env file."
+    "vibectl reads config ONLY from the environment; it never opens a .env file.\n"
+    "Source the env file written by `vibectl init` first, e.g.:\n"
+    "  source <app>.env        # exports FLY_APP + OPENCODE_PASSWORD"
 )
 
 
@@ -42,15 +42,22 @@ def _require(name: str, extra: str = "") -> str:
     return value
 
 
-def load(dry_run: bool = False, *, need_password: bool = False) -> Config:
+def load(
+    dry_run: bool = False,
+    *,
+    need_password: bool = False,
+    app: str | None = None,
+) -> Config:
     """Build a :class:`Config` from ``os.environ`` only.
 
-    ``FLY_APP`` is always required. ``OPENCODE_PASSWORD`` is required for the
-    client/API commands in real (non-dry-run) mode; in ``--dry-run`` its value
-    is never used (only the literal ``$OPENCODE_PASSWORD`` is printed), so it is
-    not required there.
+    ``FLY_APP`` is always required — except when the caller supplies ``app``
+    directly (``vibectl init <app>`` takes the app from its CLI argument, so no
+    sourced env file is needed there yet). ``OPENCODE_PASSWORD`` is required for
+    the client/API commands in real (non-dry-run) mode; in ``--dry-run`` its
+    value is never used (only the literal ``$OPENCODE_PASSWORD`` is printed), so
+    it is not required there.
     """
-    app = _require("FLY_APP")
+    app = app or _require("FLY_APP")
     raw_port = os.environ.get("OC_PORT", "4096")
     try:
         port = int(raw_port)
@@ -64,7 +71,8 @@ def load(dry_run: bool = False, *, need_password: bool = False) -> Config:
             "OPENCODE_PASSWORD",
             extra=(
                 "Lost it? Run `vibectl password` to recover it from "
-                "/data/state/opencode_password, then export it (or source .env)."
+                "/data/state/opencode_password, then export it (or put it in the env "
+                "file written by `vibectl init`)."
             ),
         )
     return Config(
