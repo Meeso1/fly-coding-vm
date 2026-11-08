@@ -14,6 +14,9 @@ from . import __version__
 from .api import prompt, sessions
 from .config import ConfigError, load
 from .fly import Runner, proxy_up, resolve_port
+from .log import ActivityLog
+from .metrics import show_metrics
+from .pin import connect_pin
 from .provision import deploy_from, init as init_cmd
 
 _PASSWORD_COMMANDS = frozenset({"connect", "proxy", "prompt", "sessions"})
@@ -81,15 +84,24 @@ def _parser() -> argparse.ArgumentParser:
     p_prompt.add_argument("text", help="prompt text")
     p_prompt.add_argument("--title", default="vibectl prompt")
     p_prompt.add_argument("--dir", dest="directory", default="/root")
-    p_sessions = sub.add_parser("sessions", help="list sessions (GET /api/session)")
+    p_sessions = sub.add_parser(
+        "sessions", help="list sessions with per-session cost (GET /api/session)"
+    )
     p_sessions.add_argument("--json", action="store_true", help="print raw JSON")
+    sub.add_parser(
+        "metrics",
+        help="show per-VM-run LLM cost from /data/state/metrics.jsonl",
+    )
     sub.add_parser("deploy", help="fly deploy -a $FLY_APP")
     return parser
 
 
 def _connect(args: argparse.Namespace, r: Runner) -> int:
     url = f"http://127.0.0.1:{resolve_port(r)}"
-    with proxy_up(r):
+    r.log.event("connect", web=bool(args.web))
+    # The connect pin keeps the idle watcher from stopping the VM while a
+    # client is attached; proxy_up owns the fly proxy child.
+    with connect_pin(r), proxy_up(r):
         if args.web:
             print(f"Web UI: {url}  (password = $OPENCODE_PASSWORD); Ctrl-C stops the proxy")
             if r.cfg.dry_run:
@@ -107,7 +119,7 @@ def _connect(args: argparse.Namespace, r: Runner) -> int:
             else:
                 env = {**os.environ, "OPENCODE_PASSWORD": r.cfg.password or ""}
                 subprocess.run(oc_cmd, env=env, check=False)
-    # leaving the context terminates the proxy child
+    # leaving the context removes the pin and terminates the proxy child
     return 0
 
 
@@ -117,12 +129,15 @@ def _dispatch(args: argparse.Namespace, r: Runner) -> int:
         return init_cmd(r, args)
     if cmd == "start":
         mid = r.machine_id()
+        r.log.event("machine start", mid=mid)
         rc = r.run(["machine", "start", mid, "-a", r.cfg.app])
         if rc != 0:
             return rc
         return r.run(["machine", "wait", mid, "-a", r.cfg.app, "--state", "started"])
     if cmd == "stop":
-        return r.run(["machine", "stop", r.machine_id(), "-a", r.cfg.app])
+        mid = r.machine_id()
+        r.log.event("machine stop", mid=mid)
+        return r.run(["machine", "stop", mid, "-a", r.cfg.app])
     if cmd == "status":
         mid = r.machine_id()
         print(f"app={r.cfg.app} machine={mid}", file=sys.stderr)
@@ -143,7 +158,10 @@ def _dispatch(args: argparse.Namespace, r: Runner) -> int:
             )
         return int(r.machine_exec(remote))
     if cmd == "password":
-        out = r.machine_exec(["cat", "/data/state/opencode_password"], capture=True)
+        # The recovered value is itself a secret: do not log the output.
+        out = r.machine_exec(
+            ["cat", "/data/state/opencode_password"], capture=True, sensitive=True
+        )
         if not r.cfg.dry_run:
             print(out)
         return 0
@@ -155,6 +173,9 @@ def _dispatch(args: argparse.Namespace, r: Runner) -> int:
     if cmd == "sessions":
         sessions(r, as_json=args.json)
         return 0
+    if cmd == "metrics":
+        show_metrics(r)
+        return 0
     if cmd == "deploy":
         return deploy_from(r, r.cfg.region)
     return 2
@@ -163,6 +184,10 @@ def _dispatch(args: argparse.Namespace, r: Runner) -> int:
 def main(argv: list[str] | None = None) -> int:
     """Parse args, load env-only config, dispatch; return the process exit code."""
     args = _parser().parse_args(argv)
+    app = args.app if args.command == "init" else (os.environ.get("FLY_APP") or "unknown")
+    log = ActivityLog(app=app, dry_run=args.dry_run)
+    raw_argv = argv if argv is not None else sys.argv[1:]
+    log.event("invoke", command=args.command, args=" ".join(raw_argv))
     try:
         # `vibectl init <app>` carries the app as its CLI argument; it must work
         # before any env file exists, so no FLY_APP requirement there.
@@ -171,8 +196,12 @@ def main(argv: list[str] | None = None) -> int:
             need_password=args.command in _PASSWORD_COMMANDS,
             app=args.app if args.command == "init" else None,
         )
-        return _dispatch(args, Runner(cfg))
+        r = Runner(cfg, log=log)
+        rc = _dispatch(args, r)
+        log.event("exit", rc=rc)
+        return rc
     except ConfigError as exc:
+        log.event("error", message=str(exc))
         print(f"error: {exc}", file=sys.stderr)
         return 2
 

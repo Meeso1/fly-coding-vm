@@ -30,8 +30,8 @@ Only after the fly steps succeed it is atomically replaced with the real
 a failed login cannot block the retry after ``fly auth login``. A deploy
 failure-after-finalize keeps the file (the Fly-side app/volume/secrets exist).
 
-Credentials come from flags or the current environment only — vibectl never
-reads ``.env`` files itself. NOT idempotent: use a fresh, unused app name.
+Credentials come from flags or the current environment only. NOT idempotent:
+use a fresh, unused app name.
 """
 
 from __future__ import annotations
@@ -140,8 +140,10 @@ def deploy_from(r: Runner, region: str | None) -> int:
 
     ``region`` ($FLY_REGION or the ``--region`` given to init) is applied to
     the *copy's* fly.toml only; passing None deploys with the checkout's
-    ``primary_region`` default. The temp dir is removed afterwards.
+    ``primary_region`` default. The temp dir is removed afterwards. Re-runnable:
+    each call builds a fresh image and updates the running machine to it.
     """
+    r.log.event("deploy start", app=r.cfg.app, region=region)
     if r.cfg.dry_run:
         if region is not None:
             print(
@@ -151,17 +153,19 @@ def deploy_from(r: Runner, region: str | None) -> int:
             )
         print("note: fly deploy starts the machine; run `vibectl stop` if idle.",
               file=sys.stderr)
-        return r.run(["deploy", "-a", r.cfg.app])
-
-    require_fly(False)
-    with _temp_deploy_dir() as work:
-        if region is not None:
-            toml = work / "fly.toml"
-            toml.write_text(patch_primary_region(toml.read_text(), region))
-            print(f'deploying from a temp copy: fly.toml primary_region = "{region}" ')
-        print("note: fly deploy starts the machine; run `vibectl stop` if idle.",
-              file=sys.stderr)
-        return r.run(["deploy", "-a", r.cfg.app], cwd=str(work))
+        rc = r.run(["deploy", "-a", r.cfg.app])
+    else:
+        require_fly(False)
+        with _temp_deploy_dir() as work:
+            if region is not None:
+                toml = work / "fly.toml"
+                toml.write_text(patch_primary_region(toml.read_text(), region))
+                print(f'deploying from a temp copy: fly.toml primary_region = "{region}" ')
+            print("note: fly deploy starts the machine; run `vibectl stop` if idle.",
+                  file=sys.stderr)
+            rc = r.run(["deploy", "-a", r.cfg.app], cwd=str(work))
+    r.log.event("deploy result", rc=rc)
+    return rc
 
 
 # --- env file: reserve (all commented) -> finalize (atomic) / discard -------

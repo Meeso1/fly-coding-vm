@@ -33,10 +33,18 @@ def _curl(r: Runner, method: str, path: str, body: dict | None) -> str:
     return out
 
 
+def _as_float(value: object) -> float:
+    try:
+        return float(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return 0.0
+
+
 def request(r: Runner, method: str, path: str, *, body: dict | None = None) -> dict:
     """Perform an API call, or print its curl equivalent in ``--dry-run``."""
     if r.cfg.dry_run:
         print("[dry-run] " + _curl(r, method, path, body))
+        r.log.write("api", f"{method} {path} (dry-run) :: {_curl(r, method, path, body)}")
         return {}
     url = f"{_base(r)}{path}"
     data = json.dumps(body).encode() if body is not None else None
@@ -44,19 +52,26 @@ def request(r: Runner, method: str, path: str, *, body: dict | None = None) -> d
     if body is not None:
         headers["Content-Type"] = "application/json"
     req = urllib.request.Request(url, data=data, headers=headers, method=method)
+    r.log.write(
+        "api", f"{method} {path} request body={json.dumps(body) if body is not None else ''}"
+    )
     try:
         with urllib.request.urlopen(req, timeout=30) as resp:
             raw = resp.read().decode()
+            status = resp.status
     except urllib.error.HTTPError as exc:
+        detail = exc.read().decode()[:300]
+        r.log.write("api", f"{method} {path} -> HTTP {exc.code}: {detail}")
         raise ConfigError(
-            f"OpenCode API {method} {path} -> HTTP {exc.code}: "
-            f"{exc.read().decode()[:300]}"
+            f"OpenCode API {method} {path} -> HTTP {exc.code}: {detail}"
         ) from exc
     except urllib.error.URLError as exc:
+        r.log.write("api", f"{method} {path} -> unreachable: {exc.reason}")
         raise ConfigError(
             f"OpenCode API unreachable at {url} ({exc.reason}); "
             "is `vibectl connect` / the proxy running?"
         ) from exc
+    r.log.write("api", f"{method} {path} -> HTTP {status} ({len(raw)} bytes): {raw[:400]}")
     return json.loads(raw) if raw.strip() else {}
 
 
@@ -71,6 +86,7 @@ def create_session(r: Runner, *, title: str, directory: str) -> str:
         sid = (data.get("data") or {}).get("id") or data.get("id")
     if not sid:
         raise ConfigError("could not read session id from POST /api/session response")
+    r.log.event("session created", sid=str(sid))
     return str(sid)
 
 
@@ -79,6 +95,7 @@ def prompt(r: Runner, text: str, *, title: str, directory: str) -> str:
     with proxy_up(r):
         sid = create_session(r, title=title, directory=directory)
         request(r, "POST", f"/api/session/{sid}/prompt", body={"text": text})
+        r.log.event("prompt sent", sid=sid)
         print(f"session: {sid}")
         return sid
 
@@ -98,6 +115,7 @@ def sessions(r: Runner, *, as_json: bool) -> None:
             title = s.get("title", "")
             directory = (s.get("location") or {}).get("directory", "")
             updated = (s.get("time") or {}).get("updated", "")
-            print(f"{sid}  {directory}  {title}  (updated {updated})")
+            cost = _as_float(s.get("cost"))
+            print(f"{sid}  ${cost:.4f}  {directory}  {title}  (updated {updated})")
         if not rows:
             print("(no sessions)")

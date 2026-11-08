@@ -13,7 +13,12 @@ def test_missing_fly_app_errors_and_mentions_sourcing(tmp_path, monkeypatch, cap
     captured = capsys.readouterr()
 
     assert rc != 0
+    # concise, actionable hint (no lecture about how config is read)
+    assert "FLY_APP is not set" in captured.err
+    assert "source <app>.env" in captured.err
     assert "vibectl init" in captured.err
+    assert "ONLY from the environment" not in captured.err
+    assert "never opens" not in captured.err
     assert "should_not_be_read" not in captured.err
     assert "should_not_be_read" not in captured.out
 

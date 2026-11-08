@@ -40,8 +40,8 @@ def main(argv: list[str] | None = None) -> int:
 
     p_watch = sub.add_parser(
         "watch",
-        help="Idle watcher: stop this Fly Machine when no OpenCode session is "
-        "running and none was updated recently (or after max uptime).",
+        help="Idle watcher: stop this machine when no OpenCode session is busy "
+        "(a connected client keeps it awake), recording per-run LLM cost.",
     )
     p_watch.add_argument("--idle-minutes", type=int, default=int(os.environ.get("IDLE_MINUTES", "15")))
     p_watch.add_argument(
@@ -64,7 +64,7 @@ def main(argv: list[str] | None = None) -> int:
         dest = start_work(args.repo, args.branch)
         print(dest)
         print(
-            'for gh CLI in this shell: export GITHUB_TOKEN="$(cat "$VM_STATE_DIR/gh_token" 2>/dev/null || cat /data/state/gh_token)"',
+            'gh CLI: export GITHUB_TOKEN="$(cat "$VM_STATE_DIR/gh_token" 2>/dev/null || cat /data/state/gh_token)"',
             file=sys.stderr,
         )
         return 0

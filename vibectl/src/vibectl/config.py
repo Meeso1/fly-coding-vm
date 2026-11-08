@@ -1,8 +1,8 @@
 """Environment-only configuration for vibectl.
 
-Config is read exclusively from ``os.environ``. vibectl NEVER opens a ``.env``
-file: the user sources it in their shell first. A missing required var raises a
-friendly :class:`ConfigError` that tells the user to ``source .env``.
+Config is read from ``os.environ`` (the user ``source``s ``<app>.env`` first).
+A missing required var raises a :class:`ConfigError` that tells the user how to
+fix it right now.
 """
 
 from __future__ import annotations
@@ -27,16 +27,15 @@ class Config:
 
 
 _ENV_HINT = (
-    "vibectl reads config ONLY from the environment; it never opens a .env file.\n"
-    "Source the env file written by `vibectl init` first, e.g.:\n"
-    "  source <app>.env        # exports FLY_APP + OPENCODE_PASSWORD"
+    "source the env file with the VM data first "
+    "(e.g. `source <app>.env`, written by `vibectl init`) and rerun"
 )
 
 
 def _require(name: str, extra: str = "") -> str:
     value = os.environ.get(name)
     if not value:
-        message = f"{name} is not set.\n{_ENV_HINT}"
+        message = f"{name} is not set — {_ENV_HINT}."
         if extra:
             message += "\n" + extra
         raise ConfigError(message)
@@ -76,9 +75,8 @@ def load(
         password = _require(
             "OPENCODE_PASSWORD",
             extra=(
-                "Lost it? Run `vibectl password` to recover it from "
-                "/data/state/opencode_password, then export it (or put it in the env "
-                "file written by `vibectl init`)."
+                "Lost it? Run `vibectl password` to recover it, then export it "
+                "(or add it to the env file written by `vibectl init`)."
             ),
         )
     return Config(
@@ -98,5 +96,5 @@ def require_fly(dry_run: bool = False) -> None:
     if shutil.which("fly") is None:
         raise ConfigError(
             "fly (flyctl) not found on PATH. Install it (e.g. `brew install flyctl`) "
-            "and run `fly auth login`. vibectl is a LOCAL tool that drives flyctl."
+            "and run `fly auth login`."
         )

@@ -22,15 +22,28 @@ vm-tools start-work <owner/repo> [branch]
 #   strips the token from the remote URL, sets a credential helper that reads
 #   $GITHUB_TOKEN from the environment, stores the fresh token in the state
 #   dir, and prints the repo path.
+
+vm-tools watch [--idle-minutes 15] [--max-uptime-hours 12] [--port 4096]
+#   Idle watcher (started by entrypoint.sh). Stops the machine via /.fly/api
+#   when no session is running and none was updated within the idle window,
+#   with a hard max-uptime backstop (12 h).
+#   A live $VM_STATE_DIR/connect-pin (written by `vibectl connect`) makes the
+#   VM busy so a connected client is never cut off; expired pins (and pins
+#   older than this boot's started_at) are ignored.
+#   Right before stopping it appends one line to $VM_STATE_DIR/metrics.jsonl
+#   with the run's total OpenCode LLM cost (sum of per-session `cost`), the
+#   per-session breakdown, start/stop times and the stop reason
+#   (idle|max_uptime). `vibectl metrics` displays all past runs.
 ```
 
 Env overrides (for running outside the VM): `VM_WORK_DIR`, `VM_STATE_DIR`,
-`GITHUB_APP_ID`, `GITHUB_APP_PRIVATE_KEY`.
+`GITHUB_APP_ID`, `GITHUB_APP_PRIVATE_KEY`. `IDLE_MINUTES`, `MAX_UPTIME_HOURS`
+and `OC_PORT` set the watcher defaults.
 
 ## Dev
 
 ```bash
 uv sync                 # create .venv + lockfile
 uv run vm-tools --help
-uv run pytest           # unit tests (permission intersection)
+uv run pytest           # unit tests (permission intersection, watcher pin/metrics)
 ```

@@ -18,6 +18,12 @@
   updated for 15 minutes (and after 12 h max uptime regardless). Do NOT stop
   the machine yourself; just finish, push, and summarize.
 
+## Task summaries
+- When a task is finished, `mkdir -p /data/summaries` and write a SHORT
+  high-level summary (2-5 lines) to `/data/summaries/<session-id>.md`. Highlight
+  non-obvious decisions and gotchas, not a list of code changes. `/data` persists
+  across VM stop/start.
+
 ## GitHub auth
 - Access is via repo-scoped GitHub App tokens (valid 1 h).
   `vm-tools start-work` stores one in `/data/state/gh_token`; git in the repo

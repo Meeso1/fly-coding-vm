@@ -68,7 +68,7 @@ it, and returns immediately.
    curl -sS -u "opencode:$OPENCODE_PASSWORD" -X POST \
      "http://127.0.0.1:4096/api/session/$SID/prompt" \
      -H 'Content-Type: application/json' \
-     -d '{"text":"WORKER (do-stuff) session rooted at /root/work/<repo>: do ALL the work here. NEVER use the start-repo-work skill again in this session (it exists only for the global /root session to spawn workers). Commit and push before finishing. TASK: <the task>"}'
+     -d '{"text":"WORKER (do-stuff) session rooted at /root/work/<repo>: do ALL the work here. NEVER use the start-repo-work skill again in this session (it exists only for the global /root session to spawn workers). Commit and push before finishing. When finished, mkdir -p /data/summaries and write a SHORT high-level summary (non-obvious decisions/gotchas, not code changes) to /data/summaries/<session-id>.md. TASK: <the task>"}'
    ```
 
 5. Reply to the user with the new session ID (`ses_...`) so it can be watched,
@@ -88,6 +88,9 @@ Rules:
 - Never clone into `/data` (the volume); repos live in `/root/work` (rootfs).
 - Always commit and **push** before finishing — the rootfs is wiped when the
   VM stops.
+- On finishing, write a SHORT high-level summary (non-obvious decisions/gotchas,
+  not code changes) to `/data/summaries/<session-id>.md` (`mkdir -p` first;
+  `/data` persists across VM stop/start).
 - If git/gh calls fail with 401, the token expired: use the `gh-token` skill.
 - The watcher stops the VM only when no session is running anywhere and none
   was updated within the idle window, so "delegate and let go" is safe: the

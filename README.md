@@ -23,6 +23,10 @@ commands; one checkout can manage several VMs (one `<app>.env` per instance,
   was updated for `IDLE_MINUTES` (default 15 min), with a hard
   `MAX_UPTIME_HOURS` (default 12 h) backstop. Compute is billed per second, so
   this keeps cost at ~$0.4–1.8 per 8 h of coding (shared-cpu-8x/8 GB in `iad`).
+  While `vibectl connect` runs, a freshness pin on `/data` keeps the watcher
+  from stopping the VM (the max-uptime backstop still applies). Right before
+  stopping, the watcher writes one `/data/state/metrics.jsonl` line with the
+  run's total OpenCode LLM cost; `vibectl metrics` shows every past run.
 - **Sessions:** prompts go to a *global* session in `$HOME` (`/root`). For repo
   work, the agent uses the **start-repo-work** skill, which runs
   `vm-tools start-work <owner/repo>` (clones into `/root/work/<repo>`) and then
@@ -78,9 +82,8 @@ vibectl stop         # deploy starts the machine; the watcher stops it when idle
 ```
 
 `<app>.env` and `<app>.port` are gitignored (`*.env`, `*.port`); the env file
-holds real secrets — never commit it. vibectl reads config only from exported
-variables; it never opens a `.env` file itself, so `source` it before any other
-command.
+holds real secrets — never commit it. `source` the env file written by
+`vibectl init` before other commands (e.g. `source my-vm.env`).
 
 Region and VM size come from `fly.toml` (`primary_region = "iad"`,
 shared-cpu-8x/8 GB); `FLY_REGION` (set by `init --region`) picks the deploy
@@ -102,7 +105,11 @@ fly deploy -a my-vm              # only with --deploy
 ```
 </details>
 
-Re-deploy after changing the Dockerfile, scripts, skills or `vm-tools/`:
+`vibectl deploy` can be rerun at any time after changing the Dockerfile,
+`entrypoint.sh`, `skills/`, `home/` or `vm-tools/`. Each run builds from a fresh
+temp copy and updates the running machine to the new image — no separate
+"redeploy" command is needed. It starts the machine; stop it if you won't use it
+yet.
 
 ```bash
 vibectl deploy          # `fly deploy -a $FLY_APP`; then `vibectl stop` if idle
@@ -152,11 +159,12 @@ vibectl logs              # fly logs -a $FLY_APP
 vibectl logs --watcher    # tail -n 100 /data/logs/watcher.log via fly machine exec
 vibectl exec -- <cmd>     # run one remote command (single string after --, NO shell)
 vibectl password          # recover OPENCODE_PASSWORD from /data/state/opencode_password
-vibectl connect           # start fly proxy + local `opencode --server`; kills proxy on exit
+vibectl connect           # start fly proxy + local `opencode --server`; keeps the VM awake while attached
 vibectl connect --web     # open the web UI instead (Ctrl-C stops the proxy); alias: vibectl proxy
 vibectl prompt "..."      # create a session + POST /api/session/{id}/prompt through the proxy
-vibectl sessions          # GET /api/session (add --json for raw output)
-vibectl deploy            # fly deploy -a $FLY_APP
+vibectl sessions          # GET /api/session (per-session cost column; --json for raw output)
+vibectl metrics           # show per-VM-run LLM cost from /data/state/metrics.jsonl
+vibectl deploy            # fly deploy -a $FLY_APP (rerunnable any time)
 ```
 
 `vibectl exec -- ...` joins your argv into the single string `fly machine exec`
@@ -164,6 +172,15 @@ expects after `--` (it word-splits it and runs it **without a shell**). For
 pipes/compound commands wrap it: `vibectl exec -- sh -c 'tail -n 100
 /data/logs/watcher.log | grep stop'`. `vibectl connect` starts `fly proxy`, waits
 for the local port, runs the TUI/web UI, and terminates the proxy when it exits.
+While connected, vibectl pins the VM on `/data` so the idle watcher cannot stop
+it (removed on exit; `--dry-run` just prints the `fly machine exec` equivalents).
+
+Every command appends a timestamped, secret-redacted line to
+`logs/vibectl-<app>.log` in the invoking folder (next to `<app>.env`/
+`<app>.port`): fly commands, OpenCode API calls, exit codes and events (proxy,
+machine start/stop, deploy, session created, errors). `--dry-run` is logged too,
+tagged `[DRY]`. Stdout/stderr are unchanged. Set `VIBECTL_LOG_DIR` to relocate
+the `logs/` dir.
 
 ## Daily usage
 
@@ -177,17 +194,20 @@ vibectl connect                # proxy + local TUI in ONE process; exiting the T
 # from another terminal (the proxy stays owned by `vibectl connect`):
 vibectl prompt "Work on owner/repo: <task> (use the start-repo-work skill)"
 vibectl sessions               # each entry has location.directory, time, cost, tokens
+vibectl metrics                # per-VM-run LLM cost (start/stop, reason, total, per-session)
 vibectl status
 vibectl logs                   # or: vibectl logs --watcher
 vibectl password               # recover the password if lost
 vibectl exec -- sh -c 'tail -n 100 /data/logs/watcher.log | grep stop'
 
 vibectl stop                   # manual stop (the watcher usually does this)
-vibectl deploy                 # after changing Dockerfile/scripts/skills/vm-tools
+vibectl deploy                 # rerunnable any time after changing the image files
 ```
 
 The watcher stops the VM when all sessions have been idle for 15 min (or after
-12 h max uptime); reading results between prompts does not stop it.
+12 h max uptime); reading results between prompts, or staying attached with
+`vibectl connect`, does not stop it. Each stop records the run's total LLM cost
+in `/data/state/metrics.jsonl` (read it with `vibectl metrics`).
 
 ## Session flow (global session → delegated worker sessions)
 
@@ -252,3 +272,23 @@ the rule applies to it; normal (non-force) pushes and PR merges still work.
   **$0.36–$1.79 per 8 h of coding** depending on idle handling; standing costs
   are the volume ($0.15/GB/mo → $0.75 for 5 GB) + stopped rootfs
   ($0.15/GB/mo). Region `fra` would be ×1.154 on compute.
+- **LLM cost (free to observe):** every stop appends one
+  `/data/state/metrics.jsonl` line with the sum of per-session `cost` values
+  from the OpenCode API (plus a per-session breakdown, run start/stop times and
+  the stop reason `idle`/`max_uptime`). `vibectl metrics` prints all past runs;
+  `vibectl sessions` shows each session's `cost`. The OpenCode data dir persists
+  on `/data`, so the recorded total is cumulative — subtract two lines to get a
+  single run's spend. Fly compute billing is not exposed by the in-guest
+  Machines API socket, so it is intentionally not tracked here.
+
+## Observability
+
+- **Agent summaries:** when a task finishes, the session writes a short,
+  high-level summary (non-obvious decisions and gotchas, not a code-change
+  list) to `/data/summaries/<session-id>.md`. `/data` persists across VM
+  stop/start.
+- **Activity log:** `logs/vibectl-<app>.log` in the invoking folder records
+  every command, API call, exit code and event (secret-redacted); `--dry-run`
+  included.
+- **Cost:** `vibectl metrics` for per-run totals, `vibectl sessions` for
+  per-session cost, and `/data/state/metrics.jsonl` on the volume.

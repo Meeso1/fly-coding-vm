@@ -65,7 +65,7 @@ def test_port_unset_picks_free_and_records(tmp_path, monkeypatch):
     assert r.cfg.port == port  # memoized on the config
 
 
-def test_port_unset_reuses_recorded_open_port(tmp_path, monkeypatch, capsys):
+def test_port_unset_reuses_recorded_open_port(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     monkeypatch.delenv("OC_PORT", raising=False)
     with socket.socket() as s:
@@ -75,7 +75,7 @@ def test_port_unset_reuses_recorded_open_port(tmp_path, monkeypatch, capsys):
         (tmp_path / "my-vm.port").write_text(f"{open_port}\n")
         r = Runner(_cfg(None))
         assert resolve_port(r) == open_port  # proxy piggybacks on it
-    assert "reusing" in capsys.readouterr().out
+        assert (tmp_path / "my-vm.port").read_text().strip() == str(open_port)
 
 
 def test_port_recorded_but_not_open_picks_new(tmp_path, monkeypatch):
