@@ -10,8 +10,9 @@ commands; one checkout can manage several VMs (one `<app>.env` per instance,
   lands in Fly's registry and the Machine is updated to it).
 - **OpenCode server runs on the VM** (`opencode serve`, port 4096). You connect
   from your local machine over Fly's WireGuard private network:
-  `fly proxy 4096:4096 -a <app>` + `opencode --server http://127.0.0.1:4096`
-  (TUI), the web UI at the same address, or plain `curl -u opencode:$PW`.
+  `fly proxy <local>:4096 -a <app>` + `opencode --server http://127.0.0.1:<local>`
+  (TUI), the web UI at the same address, or plain `curl -u opencode:$PW`. vibectl
+  picks `<local>` automatically (or pin it with `OC_PORT`).
 - **No public ports.** `fly.toml` defines no services, so nothing is reachable
   from the internet. Access is WireGuard-only (flyctl auth to your org) *plus*
   the OpenCode server password (Basic auth / pairing). Two layers.
@@ -37,19 +38,6 @@ commands; one checkout can manage several VMs (one `<app>.env` per instance,
   `vm-tools mint-gh-token` mints a 1 h installation token scoped to a *single*
   repo at mint time (`repositories: [...]` param — enforced by GitHub).
 
-## Files
-
-| File | Purpose |
-|---|---|
-| `fly.toml` | app/region/VM size/restart policy/volume mount; **no services on purpose** |
-| `Dockerfile` | tooling: opencode, gh, git, uv + `vm-tools`, tmux, jq, openssl |
-| `vm-tools/` | the uv tools project (plain directory, installed as the `vm-tools` command: `start-work`, `mint-gh-token`, `watch`) |
-| `vibectl/` | local-only uv CLI: one-time `init` (app/volume/secrets/env file) + control (NOT in the Dockerfile; see "Local CLI" below) |
-| `entrypoint.sh` | bash: boots `opencode serve` + `vm-tools watch`, writes state, `sleep infinity` |
-| `skills/` | global OpenCode skills copied to `~/.config/opencode/skills` (`start-repo-work`, `gh-token`) |
-| `home/AGENTS.md` | agent rules on the VM (session flow, ephemeral FS, push, tokens) |
-| `home/opencode.jsonc` | global opencode config on the VM (auto-approve permissions) |
-
 ## Prereqs (local machine)
 
 ```bash
@@ -74,14 +62,14 @@ vibectl init my-vm                     # app name must be globally unique
 #     --volume-size 5                   # /data volume GB
 #     --pem ~/Downloads/app.private-key.pem
 #     --github-app-id 123456 --openrouter-key sk-or-...
-#   credentials not passed as flags default to the matching env vars
-#   ($GITHUB_APP_ID, $GITHUB_APP_PRIVATE_KEY, $OPENROUTER_API_KEY); anything
-#   missing is skipped with a note and can be added later via fly secrets set.
-#   Generative password: OPENCODE_PASSWORD is generated and written into the
-#   env file AND the Fly secret. Pass --password to reuse one instead.
-#   Add --deploy to also run `fly deploy` right away.
+#   Missing flags fall back to matching env vars ($GITHUB_APP_ID,
+#   $GITHUB_APP_PRIVATE_KEY, $OPENROUTER_API_KEY); anything missing is skipped
+#   (add later with fly secrets set). OPENCODE_PASSWORD is generated into both
+#   the env file and the Fly secret; --password reuses one instead.
+#   --deploy deploys right away; --env-file PATH writes elsewhere. An existing
+#   <app>.env is never overwritten (delete it to retry).
 
-# 3. configure your shell (exports FLY_APP + OPENCODE_PASSWORD):
+# 3. configure your shell (exports FLY_APP + FLY_REGION + OPENCODE_PASSWORD):
 source my-vm.env
 
 # 4. build + deploy (machine starts running — stop it if you don't need it yet)
@@ -89,12 +77,15 @@ vibectl deploy
 vibectl stop         # deploy starts the machine; the watcher stops it when idle
 ```
 
-The env file (`my-vm.env`) is gitignored via `*.env`; vibectl reads config only
-from exported environment variables — **never** open a `.env` file itself.
+`<app>.env` and `<app>.port` are gitignored (`*.env`, `*.port`); the env file
+holds real secrets — never commit it. vibectl reads config only from exported
+variables; it never opens a `.env` file itself, so `source` it before any other
+command.
 
-Default region/VM size come from `fly.toml` (`primary_region = "iad"`,
-shared-cpu-8x/8 GB); `vibectl init --region ...` rewrites the region line and
-`--volume-size` sets the volume.
+Region and VM size come from `fly.toml` (`primary_region = "iad"`,
+shared-cpu-8x/8 GB); `FLY_REGION` (set by `init --region`) picks the deploy
+region and `--volume-size` sets the volume. `fly.toml` is never modified by
+vibectl.
 
 <details>
 <summary>Manual equivalent (what <code>vibectl init</code> runs)</summary>
@@ -107,7 +98,7 @@ fly secrets set -a my-vm \
   OPENROUTER_API_KEY="sk-or-..." \
   GITHUB_APP_ID="123456" \
   GITHUB_APP_PRIVATE_KEY="$(cat ~/Downloads/app.private-key.pem)"
-fly deploy -a my-vm
+fly deploy -a my-vm              # only with --deploy
 ```
 </details>
 
@@ -122,9 +113,7 @@ vibectl deploy          # `fly deploy -a $FLY_APP`; then `vibectl stop` if idle
 `vibectl/` is a small **local-only** uv CLI (NOT installed in the Docker image). It
 runs on the machine where `flyctl` lives, wraps the fly commands below, resolves
 the machine id automatically, and owns the `fly proxy` child process — so you no
-longer type the machine id or run `fly proxy ... &` by hand. Config comes
-**only from environment variables**; `vibectl init <app>` writes `<app>.env` for
-you to `source` — vibectl itself never opens any `.env` file.
+longer type the machine id or run `fly proxy ... &` by hand.
 
 Install (from this repo):
 
@@ -133,26 +122,23 @@ uv tool install ./vibectl             # or: uvx --from ./vibectl vibectl --help
 uv tool install --reinstall ./vibectl  # after editing vibectl/
 ```
 
-Env file (written by `vibectl init`, gitignored; vibectl NEVER reads this file
-— you `source` it):
+`vibectl init` writes `<app>.env` (gitignored); `source` it to export:
 
 ```bash
 # my-vm.env
 export FLY_APP=my-vm
+export FLY_REGION=iad               # deploy region (set with `init --region`)
 export OPENCODE_PASSWORD="..."      # recover with: vibectl password
-# export OC_PORT=4096               # optional local port; in-VM server listens on 4096
+# export OC_PORT=5000               # optional proxy port; default: auto free port (<app>.port)
 # export FLY_MACHINE_ID=...         # optional; auto-resolved from `fly machine list --json`
-```
-
-```bash
-source .env
 ```
 
 | Var | Required | Default | Used for |
 |---|---|---|---|
 | `FLY_APP` | yes | — | app name in every `fly -a ...` command |
+| `FLY_REGION` | no | `fly.toml`'s `primary_region` | deploy region (set by `init --region`) |
 | `FLY_MACHINE_ID` | no | auto (`fly machine list -a $FLY_APP --json` `[0].id`) | start/stop/status/exec/password |
-| `OC_PORT` | no | `4096` | local proxy port + API base URL `http://127.0.0.1:$OC_PORT` |
+| `OC_PORT` | no | auto free port (recorded in `<app>.port`) | local proxy port + API base URL `http://127.0.0.1:$OC_PORT` |
 | `OPENCODE_PASSWORD` | connect / prompt / sessions | — | Basic auth + passed to `opencode --server`; if missing, run `vibectl password` |
 
 Commands — add `--dry-run` **before** the command to print the `fly`/`curl`
@@ -182,11 +168,11 @@ for the local port, runs the TUI/web UI, and terminates the proxy when it exits.
 ## Daily usage
 
 ```bash
-source my-vm.env              # FLY_APP, OPENCODE_PASSWORD (written by vibectl init)
+source my-vm.env              # FLY_APP, FLY_REGION, OPENCODE_PASSWORD (from vibectl init)
 
 vibectl start                  # start + wait; machine id resolved automatically
 vibectl connect                # proxy + local TUI in ONE process; exiting the TUI kills the proxy
-# ...or: vibectl connect --web  # opens http://127.0.0.1:4096 in a browser (Ctrl-C stops proxy)
+# ...or: vibectl connect --web  # opens the web UI in a browser (Ctrl-C stops proxy)
 
 # from another terminal (the proxy stays owned by `vibectl connect`):
 vibectl prompt "Work on owner/repo: <task> (use the start-repo-work skill)"
@@ -243,7 +229,7 @@ The watcher stops the VM when all sessions have been idle for 15 min (or after
 2. **Install on select repos only**: app page → *Install* → **Only select
    repositories** → pick the repos agents may touch → Install. (Avoid
    "all repositories" — it silently covers future repos.)
-3. Put `GITHUB_APP_ID` + the PEM as Fly secrets (setup step 3). On the VM,
+3. Put `GITHUB_APP_ID` + the PEM as Fly secrets (setup step 2). On the VM,
    `vm-tools start-work owner/repo` / `vm-tools mint-gh-token owner/repo --save`
    mint a 1 h token scoped to just that repo.
 

@@ -7,9 +7,11 @@ deliberately **not** part of the Docker image. See the root README's "Local CLI
 (vibectl)" section for the full command list and env vars.
 
 Config is read **only** from environment variables (`FLY_APP`, optional
-`FLY_MACHINE_ID`, `OC_PORT`, `OPENCODE_PASSWORD`). vibectl never opens a
-`.env` file — `vibectl init <app>` writes one (e.g. `my-vm.env`) for you to
-`source` yourself.
+`FLY_REGION`, `FLY_MACHINE_ID`, `OC_PORT`, `OPENCODE_PASSWORD`). vibectl never
+opens a `.env` file — `vibectl init <app>` writes one (e.g. `my-vm.env`) for
+you to `source` yourself (it never overwrites an existing one). Deploys run
+from a throwaway temp copy of the build context; the local `fly proxy` port is
+auto-picked (and recorded in `<app>.port`) unless `OC_PORT` is set.
 
 ```bash
 uv tool install ./vibectl                 # or: uvx --from ./vibectl vibectl --help

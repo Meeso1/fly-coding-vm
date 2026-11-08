@@ -13,8 +13,8 @@ import webbrowser
 from . import __version__
 from .api import prompt, sessions
 from .config import ConfigError, load
-from .fly import Runner, proxy_up
-from .provision import init as init_cmd
+from .fly import Runner, proxy_up, resolve_port
+from .provision import deploy_from, init as init_cmd
 
 _PASSWORD_COMMANDS = frozenset({"connect", "proxy", "prompt", "sessions"})
 
@@ -40,12 +40,9 @@ def _parser() -> argparse.ArgumentParser:
     p_init.add_argument(
         "--region",
         help="region for machine + volume (default: fly.toml's primary_region); "
-        "differs from it -> fly.toml is rewritten",
+        "recorded in <app>.env as FLY_REGION",
     )
     p_init.add_argument("--volume-size", type=int, default=5, help="volume GB (default: 5)")
-    p_init.add_argument(
-        "--config", default="fly.toml", help="fly.toml path (default: ./fly.toml)"
-    )
     p_init.add_argument(
         "--env-file", help="env file to write (default: <app>.env); source it before other commands"
     )
@@ -61,7 +58,6 @@ def _parser() -> argparse.ArgumentParser:
     p_init.add_argument(
         "--openrouter-key", help="OpenRouter key; default: $OPENROUTER_API_KEY"
     )
-    p_init.add_argument("--force", action="store_true", help="overwrite an existing env file")
     p_init.add_argument(
         "--deploy", action="store_true", help="also run `fly deploy` after the setup steps"
     )
@@ -92,7 +88,7 @@ def _parser() -> argparse.ArgumentParser:
 
 
 def _connect(args: argparse.Namespace, r: Runner) -> int:
-    url = f"http://127.0.0.1:{r.cfg.port}"
+    url = f"http://127.0.0.1:{resolve_port(r)}"
     with proxy_up(r):
         if args.web:
             print(f"Web UI: {url}  (password = $OPENCODE_PASSWORD); Ctrl-C stops the proxy")
@@ -160,8 +156,7 @@ def _dispatch(args: argparse.Namespace, r: Runner) -> int:
         sessions(r, as_json=args.json)
         return 0
     if cmd == "deploy":
-        print("note: fly deploy starts the machine; run `vibectl stop` if idle.", file=sys.stderr)
-        return r.run(["deploy", "-a", r.cfg.app])
+        return deploy_from(r, r.cfg.region)
     return 2
 
 

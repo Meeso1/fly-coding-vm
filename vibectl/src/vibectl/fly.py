@@ -9,6 +9,7 @@ import socket
 import subprocess
 import time
 from collections.abc import Iterator
+from pathlib import Path
 
 from .config import Config, ConfigError, require_fly
 
@@ -55,29 +56,88 @@ def wait_for_port(port: int, proc: subprocess.Popen, timeout: float = 15.0) -> b
     return False
 
 
+# --- local proxy port: OC_PORT override > recorded <app>.port > auto free ---
+
+
+def port_file_path(app: str) -> Path:
+    """Non-secret runtime state: the local port the proxy currently uses."""
+    return Path(f"{app}.port")
+
+
+def read_port_file(app: str) -> int | None:
+    """Recorded port, or None when missing/unreadable (stale files are ignored)."""
+    try:
+        return int(port_file_path(app).read_text().strip())
+    except (OSError, ValueError):
+        return None
+
+
+def write_port_file(app: str, port: int) -> None:
+    port_file_path(app).write_text(f"{port}\n")
+
+
+def _free_local_port() -> int:
+    """A currently-free TCP port on 127.0.0.1 (tiny race after close; accepted)."""
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        return int(s.getsockname()[1])
+
+
+def resolve_port(r: Runner) -> int:
+    """Resolve the local proxy port and memoize it on ``r.cfg``.
+
+    ``OC_PORT`` overrides everything. Otherwise: reuse the port recorded in
+    ``<app>.port`` if it is currently open (a running ``vibectl connect`` —
+    enables a second command to piggyback instead of binding a second proxy),
+    else pick a free local port and record it there so later ``prompt``/
+    ``sessions`` calls (or an `OC_PORT=<port>` export) can pin it. In
+    ``--dry-run`` nothing is written.
+    """
+    if r.cfg.port is not None:
+        return r.cfg.port
+    recorded = read_port_file(r.cfg.app)
+    if recorded is not None and port_open(recorded):
+        print(f"note: local proxy port {recorded} already open "
+              f"(recorded in {r.cfg.app}.port) — reusing it")
+        r.cfg.port = recorded
+        return recorded
+    port = _free_local_port()
+    r.cfg.port = port
+    if r.cfg.dry_run:
+        print(f"[dry-run] (would record local proxy port {port} in {r.cfg.app}.port)")
+    else:
+        write_port_file(r.cfg.app, port)
+        print(f"note: auto-picked local proxy port {port} — pin it with "
+              f"OC_PORT={port} if you want commands to always use it")
+    return port
+
+
 class Runner:
     """Runs fly commands, or just prints them in ``--dry-run`` mode."""
 
     def __init__(self, cfg: Config) -> None:
         self.cfg = cfg
 
-    def run(self, args: list[str]) -> int:
-        """Stream a fly command to the terminal; return its exit code."""
+    def run(self, args: list[str], cwd: str | None = None) -> int:
+        """Stream a fly command to the terminal; return its exit code.
+
+        ``cwd`` runs it from another directory (deploy uses a temp copy).
+        """
         cmd = ["fly", *args]
         if self.cfg.dry_run:
             print("[dry-run] " + shlex.join(cmd))
             return 0
         require_fly(self.cfg.dry_run)
-        return subprocess.run(cmd).returncode
+        return subprocess.run(cmd, cwd=cwd).returncode
 
-    def capture(self, args: list[str]) -> str:
+    def capture(self, args: list[str], cwd: str | None = None) -> str:
         """Run a fly command capturing stdout (for JSON / password output)."""
         cmd = ["fly", *args]
         if self.cfg.dry_run:
             print("[dry-run] " + shlex.join(cmd))
             return ""
         require_fly(self.cfg.dry_run)
-        proc = subprocess.run(cmd, text=True, capture_output=True)
+        proc = subprocess.run(cmd, cwd=cwd, text=True, capture_output=True)
         if proc.returncode != 0:
             raise ConfigError(
                 f"fly command failed ({proc.returncode}): {shlex.join(cmd)}\n"
@@ -114,17 +174,24 @@ class Runner:
 def proxy_up(r: Runner) -> Iterator[None]:
     """Yield with the local OC port forwarded to the VM's :4096.
 
-    Reuses an already-open port (e.g. a running ``vibectl connect``) so a second
-    proxy does not collide. Otherwise starts ``fly proxy`` as a CHILD of this
+    The port comes from
+    :func:`resolve_port` (``OC_PORT`` override / `<app>.port` / free port). If
+    an already-open port is reused (e.g. a running ``vibectl connect``) no new
+    proxy is started. Otherwise ``fly proxy`` is spawned as a CHILD of this
     process, waits for the local port, and terminates it on exit. In
-    ``--dry-run`` it only prints the command.
+    ``--dry-run`` it only prints the commands.
     """
-    port = r.cfg.port
+    port = resolve_port(r)
     if not r.cfg.dry_run and port_open(port):
         yield
         return
 
     cmd = ["fly", "proxy", f"{port}:4096", "-a", r.cfg.app]
+    if r.cfg.dry_run:
+        print("[dry-run] " + shlex.join(cmd))
+        print(f"[dry-run] (wait for 127.0.0.1:{port}, run the client, kill proxy on exit)")
+        yield
+        return
     if r.cfg.dry_run:
         print("[dry-run] " + shlex.join(cmd))
         print(f"[dry-run] (wait for 127.0.0.1:{port}, run the client, kill proxy on exit)")

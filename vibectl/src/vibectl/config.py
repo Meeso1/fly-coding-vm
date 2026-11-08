@@ -20,9 +20,10 @@ class ConfigError(Exception):
 class Config:
     app: str
     machine_id: str | None
-    port: int
+    port: int | None  # OC_PORT override; None -> auto-picked free port (see fly.py)
     password: str | None
     dry_run: bool
+    region: str | None = None  # FLY_REGION (written into the env file by init)
 
 
 _ENV_HINT = (
@@ -55,15 +56,20 @@ def load(
     sourced env file is needed there yet). ``OPENCODE_PASSWORD`` is required for
     the client/API commands in real (non-dry-run) mode; in ``--dry-run`` its
     value is never used (only the literal ``$OPENCODE_PASSWORD`` is printed), so
-    it is not required there.
+    it is not required there. ``OC_PORT`` is an OPTIONAL override for the local
+    proxy port (unset -> auto-picked free port); ``FLY_REGION`` carries the
+    per-app deploy region that ``vibectl init`` wrote into the env file.
     """
     app = app or _require("FLY_APP")
-    raw_port = os.environ.get("OC_PORT", "4096")
-    try:
-        port = int(raw_port)
-    except ValueError as exc:
-        raise ConfigError(f"OC_PORT must be an integer, got {raw_port!r}.") from exc
+    raw_port = os.environ.get("OC_PORT")
+    port: int | None = None
+    if raw_port is not None:
+        try:
+            port = int(raw_port)
+        except ValueError as exc:
+            raise ConfigError(f"OC_PORT must be an integer, got {raw_port!r}.") from exc
     machine_id = os.environ.get("FLY_MACHINE_ID") or None
+    region = os.environ.get("FLY_REGION") or None
 
     password: str | None = None
     if need_password and not dry_run:
@@ -81,6 +87,7 @@ def load(
         port=port,
         password=password,
         dry_run=dry_run,
+        region=region,
     )
 
 

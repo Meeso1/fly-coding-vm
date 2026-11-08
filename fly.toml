@@ -1,5 +1,5 @@
 app = "coding-vm" # placeholder: vibectl always passes `-a $FLY_APP`; a bare `fly deploy` targets this name (must be globally unique)
-primary_region = "iad" # machines are deployed here; `vibectl init --region <r>` rewrites this line
+primary_region = "iad" # default deploy region; a per-app region is set via FLY_REGION in <app>.env (vibectl never edits this file)
 
 [build]
   dockerfile = "Dockerfile"
